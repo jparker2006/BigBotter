@@ -103,3 +103,291 @@ button:disabled {
   background: rgba(255, 255, 255, 0.14);
   color: #f8fafc;
 }
+
+.status-badge {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+  color: #020617;
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  padding: 0.2rem 0.42rem;
+}
+
+.status-badge-crown {
+  background: linear-gradient(135deg, #fef08a, #f59e0b);
+}
+
+.status-badge-veto {
+  background: radial-gradient(circle at 35% 30%, #fef9c3, #22d3ee 54%, #0e7490);
+}
+
+.block-ribbon {
+  background: linear-gradient(90deg, rgba(127, 29, 29, 0.95), rgba(244, 63, 94, 0.92));
+  bottom: 3.25rem;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.42);
+  color: #fff1f2;
+  font-size: 0.62rem;
+  font-weight: 950;
+  inset-inline: -1.2rem;
+  letter-spacing: 0.18em;
+  padding: 0.28rem;
+  position: absolute;
+  text-align: center;
+  transform: rotate(-7deg);
+}
+
+.prediction-panel {
+  border: 1px solid rgba(250, 204, 21, 0.18);
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.09), rgba(34, 211, 238, 0.06));
+  padding: 1rem;
+}
+
+.prediction-panel label span {
+  display: block;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.prediction-panel select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.85rem;
+  background: #101827;
+  color: #f8fafc;
+  font-weight: 800;
+  padding: 0.65rem 0.75rem;
+}
+
+.broadcast-stage {
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 1.75rem;
+  background:
+    radial-gradient(circle at 50% 100%, rgba(250, 204, 21, 0.22), transparent 32%),
+    linear-gradient(145deg, rgba(2, 6, 23, 0.96), rgba(15, 23, 42, 0.88));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.35);
+  padding: 1.5rem;
+}
+
+.broadcast-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 10%, rgba(255, 255, 255, 0.04) 10% 10.4%, transparent 10.4% 20%),
+    radial-gradient(circle at 25% 0%, rgba(34, 211, 238, 0.26), transparent 30%);
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.broadcast-stage-ceremony {
+  background:
+    radial-gradient(circle at 50% 100%, rgba(244, 63, 94, 0.24), transparent 34%),
+    linear-gradient(145deg, rgba(8, 13, 28, 0.98), rgba(31, 41, 55, 0.9));
+}
+
+.broadcast-stage-feeds {
+  background:
+    radial-gradient(circle at 24% 18%, rgba(34, 211, 238, 0.2), transparent 32%),
+    linear-gradient(145deg, rgba(2, 18, 27, 0.98), rgba(6, 47, 55, 0.76));
+}
+
+.broadcast-stage-diary {
+  background:
+    radial-gradient(circle at 48% 80%, rgba(168, 85, 247, 0.24), transparent 30%),
+    linear-gradient(145deg, rgba(10, 8, 28, 0.98), rgba(30, 27, 75, 0.82));
+}
+
+.broadcast-copy,
+.stage-pedestals {
+  position: relative;
+  z-index: 1;
+}
+
+.broadcast-copy {
+  flex: 0 0 auto;
+  padding-right: 7rem;
+}
+
+.broadcast-copy p {
+  color: #fde68a;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+}
+
+.broadcast-copy h2 {
+  margin-top: 0.6rem;
+  max-width: 100%;
+  color: #ffffff;
+  font-size: clamp(1.4rem, 2.4vw, 2.35rem);
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.broadcast-copy span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.8rem;
+  max-width: 100%;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.eye-mark {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 2;
+  height: 3.4rem;
+  width: 6rem;
+  border: 0.45rem solid rgba(34, 211, 238, 0.7);
+  border-radius: 50%;
+  box-shadow: inset 0 0 35px rgba(34, 211, 238, 0.22), 0 0 34px rgba(34, 211, 238, 0.18);
+  transform: rotate(-8deg);
+}
+
+.eye-mark span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 1.8rem;
+  width: 1.8rem;
+  border-radius: 999px;
+  background: #fde047;
+  box-shadow: 0 0 28px rgba(250, 204, 21, 0.85);
+  transform: translate(-50%, -50%);
+}
+
+.stage-pedestals {
+  margin-top: auto;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 1.25rem;
+}
+
+.stage-card,
+.empty-pedestal {
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+  display: flex;
+  gap: 0.75rem;
+  min-height: 5rem;
+  padding: 0.75rem;
+}
+
+.stage-portrait {
+  flex: 0 0 auto;
+  height: 3.6rem;
+  overflow: hidden;
+  width: 3.6rem;
+  border: 2px solid rgba(250, 204, 21, 0.45);
+  border-radius: 1rem;
+  background: #0f172a;
+}
+
+.stage-portrait img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.stage-portrait strong {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  color: #fde68a;
+  font-size: 1.5rem;
+}
+
+.stage-card b {
+  display: block;
+  color: #f8fafc;
+  font-size: 0.95rem;
+  line-height: 1.05;
+}
+
+.stage-card small {
+  color: rgba(165, 243, 252, 0.72);
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+}
+
+.avatar-chip {
+  align-items: center;
+  display: flex;
+  gap: 0.28rem;
+  pointer-events: none;
+  transform: translateY(-0.2rem);
+}
+
+.avatar-chip img,
+.avatar-chip span {
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+  height: 1.35rem;
+  object-fit: cover;
+  width: 1.35rem;
+}
+
+.avatar-chip span {
+  align-items: center;
+  background: #0f172a;
+  color: #fde68a;
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 950;
+  justify-content: center;
+}
+
+.avatar-chip b {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.82);
+  color: #f8fafc;
+  font-size: 0.68rem;
+  padding: 0.18rem 0.38rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .stage-pedestals {
+    position: relative;
+    inset: auto;
+    margin-top: 2rem;
+    grid-template-columns: 1fr;
+  }
+
+  .broadcast-stage {
+    min-height: auto;
+  }
+}

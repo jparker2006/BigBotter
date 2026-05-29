@@ -1,10 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState, useTransition } from "react";
 import type { GameEvent, RoomId, SeasonTape } from "../engine/types";
-import { generateReplayTape } from "./actions";
+import { generateReplayTape, narrateJulieLine } from "./actions";
+import BroadcastStage from "./BroadcastStage";
 import { buildReplayFrame, describeEvent, nameFor, type WallHouseguest } from "./replayModel";
 import { useReplayStore } from "./replayStore";
+
+const House3D = dynamic(() => import("./House3D"), {
+  ssr: false,
+  loading: () => <div className="h-[460px] rounded-[1.75rem] border border-cyan-200/20 bg-slate-950/80" />,
+});
 
 const ROOM_LABELS: Record<RoomId, string> = {
   hoh_room: "HOH Room",
@@ -56,6 +63,11 @@ function MemoryCard({ houseguest, godMode }: { houseguest: WallHouseguest; godMo
         ) : (
           <div className="flex h-full items-center justify-center text-4xl font-black text-yellow-200">{initials(houseguest.name)}</div>
         )}
+        <div className="absolute left-2 top-2 flex gap-1">
+          {houseguest.isCurrentHoh ? <span className="status-badge status-badge-crown">HOH</span> : null}
+          {houseguest.hasCurrentVeto ? <span className="status-badge status-badge-veto">V</span> : null}
+        </div>
+        {houseguest.isCurrentNominee ? <div className="block-ribbon">ON THE BLOCK</div> : null}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/60 to-transparent p-2">
           <p className="truncate text-sm font-black text-white">{houseguest.name}</p>
           <p className="truncate text-[10px] uppercase tracking-[0.2em] text-cyan-100/70">{houseguest.archetype}</p>
@@ -84,10 +96,20 @@ function MemoryCard({ houseguest, godMode }: { houseguest: WallHouseguest; godMo
   );
 }
 
+function predictionScore(houseguest: WallHouseguest): number {
+  if (houseguest.currentStatus !== "active") return 0;
+  return Math.round((houseguest.stats.charisma + houseguest.stats.iq + houseguest.stats.memory + houseguest.morale) / 4);
+}
+
 export default function ReplayPlayer() {
   const [seed, setSeed] = useState("222");
+  const [useHaiku, setUseHaiku] = useState(false);
   const [tape, setTape] = useState<SeasonTape | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [winnerPredictionId, setWinnerPredictionId] = useState("");
+  const [evictionPredictionId, setEvictionPredictionId] = useState("");
+  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const [isVoicing, startVoiceTransition] = useTransition();
   const [isPending, startTransition] = useTransition();
   const cursor = useReplayStore((state) => state.cursor);
   const isPlaying = useReplayStore((state) => state.isPlaying);
@@ -112,11 +134,38 @@ export default function ReplayPlayer() {
     startTransition(async () => {
       try {
         const parsedSeed = Number(seed);
-        const nextTape = await generateReplayTape(Number.isInteger(parsedSeed) ? parsedSeed : Date.now());
+        const nextTape = await generateReplayTape(Number.isInteger(parsedSeed) ? parsedSeed : Date.now(), useHaiku);
         setTape(nextTape);
         setCursor(0);
+        setWinnerPredictionId("");
+        setEvictionPredictionId("");
+        setVoiceStatus(null);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Failed to generate tape.");
+      }
+    });
+  }
+
+  function playHostVoice() {
+    if (!frame?.currentEvent || frame.currentEvent.t !== "host") {
+      setVoiceStatus("Julie voice is available on host narration events.");
+      return;
+    }
+
+    setVoiceStatus(null);
+    const hostText = frame.currentEvent.text;
+    startVoiceTransition(async () => {
+      try {
+        const result = await narrateJulieLine(hostText);
+        if (!result.ok) {
+          setVoiceStatus(result.message);
+          return;
+        }
+        const audio = new Audio(result.audioDataUrl);
+        await audio.play();
+        setVoiceStatus("Playing generic host TTS.");
+      } catch (caught) {
+        setVoiceStatus(caught instanceof Error ? caught.message : "Failed to play host TTS.");
       }
     });
   }
@@ -131,6 +180,9 @@ export default function ReplayPlayer() {
       };
   const recentEvents = tape ? tape.events.slice(Math.max(0, cursor - 8), cursor + 1) : [];
   const progress = tape ? Math.round((cursor / Math.max(1, tape.events.length - 1)) * 100) : 0;
+  const activeHouseguests = frame?.houseguests.filter((houseguest) => houseguest.currentStatus === "active") ?? [];
+  const winnerPrediction = frame?.houseguests.find((houseguest) => houseguest.id === winnerPredictionId);
+  const evictionPrediction = frame?.houseguests.find((houseguest) => houseguest.id === evictionPredictionId);
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#041018] text-white">
@@ -181,7 +233,28 @@ export default function ReplayPlayer() {
                 aria-label="Replay seed"
               />
               <button className="btn-primary" disabled={isPending} onClick={generate}>
-                {isPending ? "Generating..." : tape ? "New Tape" : "Generate Tape"}
+                {isPending ? (useHaiku ? "Scheming…" : "Generating…") : tape ? "New Tape" : "Generate Tape"}
+              </button>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-100/80">AI Houseguests</p>
+                <p className="text-[11px] leading-tight text-slate-400">
+                  {useHaiku
+                    ? "Haiku makes the real decisions, confessionals & scheming — takes a few minutes."
+                    : "Off: instant deterministic placeholder season."}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={useHaiku}
+                aria-label="Toggle AI houseguests"
+                disabled={isPending}
+                onClick={() => setUseHaiku((value) => !value)}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition ${useHaiku ? "bg-cyan-400" : "bg-white/20"}`}
+              >
+                <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${useHaiku ? "left-6" : "left-1"}`} />
               </button>
             </div>
             {error ? <p className="mt-3 rounded-xl bg-red-500/15 p-3 text-sm text-red-100">{error}</p> : null}
@@ -198,7 +271,44 @@ export default function ReplayPlayer() {
               <button className="btn-secondary" disabled={!tape || isPending} onClick={toggleGodMode}>
                 {godMode ? "Hide God Mode" : "God Mode"}
               </button>
+              <button className="btn-secondary" disabled={!tape || isPending || isVoicing} onClick={playHostVoice}>
+                {isVoicing ? "Voicing..." : "Julie Voice"}
+              </button>
             </div>
+            {voiceStatus ? <p className="mt-3 rounded-xl border border-cyan-200/15 bg-cyan-200/10 p-3 text-sm text-cyan-50">{voiceStatus}</p> : null}
+            {frame ? (
+              <div className="prediction-panel mt-5">
+                <p className="text-xs font-black uppercase tracking-[0.32em] text-yellow-200">Cosmetic Predictions</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label>
+                    <span>Winner pick</span>
+                    <select value={winnerPredictionId} onChange={(event) => setWinnerPredictionId(event.target.value)}>
+                      <option value="">No pick</option>
+                      {activeHouseguests.map((houseguest) => (
+                        <option key={houseguest.id} value={houseguest.id}>
+                          {houseguest.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Next boot pick</span>
+                    <select value={evictionPredictionId} onChange={(event) => setEvictionPredictionId(event.target.value)}>
+                      <option value="">No pick</option>
+                      {activeHouseguests.map((houseguest) => (
+                        <option key={houseguest.id} value={houseguest.id}>
+                          {houseguest.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                  <p>{winnerPrediction ? `Winner meter: ${predictionScore(winnerPrediction)}% for ${winnerPrediction.name}.` : "Winner pick has no gameplay effect."}</p>
+                  <p>{evictionPrediction ? `Danger meter: ${100 - predictionScore(evictionPrediction)}% for ${evictionPrediction.name}.` : "Boot pick is for the viewer only."}</p>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-6">
               <div className="flex justify-between text-xs uppercase tracking-[0.25em] text-slate-400">
                 <span>Replay</span>
@@ -228,43 +338,50 @@ export default function ReplayPlayer() {
         </section>
 
         {frame ? (
-          <section className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
-            <div className="rounded-[2rem] border border-white/15 bg-black/40 p-4 shadow-2xl backdrop-blur">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-black">Memory Wall</h2>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Portraits + status</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-                {frame.houseguests.map((houseguest) => (
-                  <MemoryCard key={houseguest.id} houseguest={houseguest} godMode={godMode} />
-                ))}
-              </div>
+          <section className="grid gap-6">
+            <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <BroadcastStage tape={tape!} frame={frame} />
+              <House3D frame={frame} />
             </div>
 
-            <div className="rounded-[2rem] border border-white/15 bg-black/40 p-4 shadow-2xl backdrop-blur">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-black">House Map</h2>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Room positions</p>
+            <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
+              <div className="rounded-[2rem] border border-white/15 bg-black/40 p-4 shadow-2xl backdrop-blur">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-2xl font-black">Memory Wall</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Portraits + status</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+                  {frame.houseguests.map((houseguest) => (
+                    <MemoryCard key={houseguest.id} houseguest={houseguest} godMode={godMode} />
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {Object.entries(frame.rooms).map(([roomId, houseguests]) => (
-                  <section key={roomId} className="min-h-32 rounded-2xl border border-cyan-200/15 bg-slate-950/70 p-3">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="font-black">{ROOM_LABELS[roomId as RoomId]}</h3>
-                      <span className="rounded-full bg-white/10 px-2 py-1 text-xs">{houseguests.length}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {houseguests.map((houseguest) => (
-                        <span
-                          key={houseguest.id}
-                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-slate-100"
-                        >
-                          {houseguest.name.split(" ")[0]}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
-                ))}
+
+              <div className="rounded-[2rem] border border-white/15 bg-black/40 p-4 shadow-2xl backdrop-blur">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-2xl font-black">House Map</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Room positions</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {Object.entries(frame.rooms).map(([roomId, houseguests]) => (
+                    <section key={roomId} className="min-h-32 rounded-2xl border border-cyan-200/15 bg-slate-950/70 p-3">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="font-black">{ROOM_LABELS[roomId as RoomId]}</h3>
+                        <span className="rounded-full bg-white/10 px-2 py-1 text-xs">{houseguests.length}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {houseguests.map((houseguest) => (
+                          <span
+                            key={houseguest.id}
+                            className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-slate-100"
+                          >
+                            {houseguest.name.split(" ")[0]}
+                          </span>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
