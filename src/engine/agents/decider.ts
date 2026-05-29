@@ -1,5 +1,6 @@
 import type { GameState, Phase, RoomId } from "../types";
 import type { VetoUseDecision } from "../rules/veto";
+import type { CompType } from "../comps/compCatalog";
 
 export type DecisionContext = {
   state: GameState;
@@ -71,6 +72,39 @@ export type SocialTurnContext = DecisionContext & {
   priorTurns: { speakerId: string; text: string }[];
 };
 
+export type HostNarrationContext = {
+  state: GameState;
+  beat: string;
+  text: string;
+  focusIds?: string[];
+};
+
+export type CompQuestion = {
+  id: string;
+  prompt: string;
+  correctAnswer: string;
+  sourceEvent?: string;
+};
+
+export type CompAnswer = {
+  answer: string;
+  confidence: number;
+};
+
+export type CompQuestionContext = {
+  state: GameState;
+  compType: CompType;
+  phase: Phase | "final_hoh_part_1" | "final_hoh_part_2" | "final_hoh_part_3";
+  playerIds: string[];
+  roundCount: number;
+};
+
+export type CompAnswerContext = DecisionContext & {
+  compType: CompType;
+  question: CompQuestion;
+  round: number;
+};
+
 export interface AgentDecider {
   pickNominations(context: DecisionContext): Promise<string[]>;
   useVeto(context: DecisionContext & { nomineeIds: string[]; vetoHolderId: string }): Promise<VetoUseDecision>;
@@ -85,4 +119,7 @@ export interface AgentDecider {
   speakTurn?(context: SocialTurnContext): Promise<SocialTurn | string>;
   acceptDeal?(context: DecisionContext): Promise<boolean>;
   confessional?(context: DecisionContext): Promise<string>;
+  hostNarration?(context: HostNarrationContext): Promise<string>;
+  generateCompQuestions?(context: CompQuestionContext): Promise<CompQuestion[]>;
+  answerCompQuestion?(context: CompAnswerContext): Promise<CompAnswer>;
 }

@@ -121,6 +121,7 @@ export interface GameState {
   haveNotMoraleDeltas: Record<string, number>;
   doubleEvictionRemaining: number;
   usedCompTypes: string[];
+  publicHistory: string[];
 }
 
 export type CeremonyKind = "nomination" | "veto" | "eviction";
@@ -129,6 +130,10 @@ export type CompRound = {
   round: number;
   scores: Record<string, number>;
   eliminatedId?: string;
+  question?: string;
+  correctAnswer?: string;
+  answers?: Record<string, { answer: string; correct: boolean; confidence: number; scoreDelta: number }>;
+  narration?: string;
 };
 
 export type GameEvent =
@@ -142,6 +147,8 @@ export type GameEvent =
       rounds: CompRound[];
       results: Record<string, number>;
       winnerId: string;
+      title?: string;
+      narration?: string;
     }
   | { t: "movement"; hgId: string; from: RoomId; to: RoomId }
   | {

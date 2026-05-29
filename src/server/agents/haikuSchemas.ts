@@ -86,12 +86,39 @@ export const socialTurnSchema = z.object({
   reasoning: z.string().min(1),
 });
 
+export const textLineSchema = z.object({
+  text: z.string().min(1).max(700),
+});
+
+export const compQuestionSchema = z.object({
+  questions: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(40),
+        prompt: z.string().min(1).max(280),
+        correctAnswer: z.string().min(1).max(180),
+        sourceEvent: z.string().max(220).optional(),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export const compAnswerSchema = z.object({
+  answer: z.string().min(1).max(180),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().min(1).max(300),
+});
+
 export type NominationToolInput = z.infer<typeof nominationSchema>;
 export type VetoUseToolInput = z.infer<typeof vetoUseSchema>;
 export type IdChoiceToolInput = z.infer<typeof idChoiceSchema>;
 export type JuryVoteToolInput = z.infer<typeof juryVoteSchema>;
 export type ConversationPlanToolInput = z.infer<typeof conversationPlanSchema>;
 export type SocialTurnToolInput = z.infer<typeof socialTurnSchema>;
+export type TextLineToolInput = z.infer<typeof textLineSchema>;
+export type CompQuestionToolInput = z.infer<typeof compQuestionSchema>;
+export type CompAnswerToolInput = z.infer<typeof compAnswerSchema>;
 
 export const nominationInputSchema = {
   type: "object",
@@ -251,4 +278,48 @@ export const socialTurnInputSchema = {
     reasoning: { type: "string" },
   },
   required: ["text", "done", "relationshipDeltas", "memories", "allianceProposal", "dealProposal", "showmanceTargetId", "secretsShared", "readsShared", "reasoning"],
+};
+
+export const textLineInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    text: { type: "string" },
+  },
+  required: ["text"],
+};
+
+export const compQuestionInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    questions: {
+      type: "array",
+      minItems: 1,
+      maxItems: 8,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          prompt: { type: "string", description: "The clue/question to present to players." },
+          correctAnswer: { type: "string", description: "The exact correct answer." },
+          sourceEvent: { type: "string", description: "The real season event this clue is based on." },
+        },
+        required: ["id", "prompt", "correctAnswer"],
+      },
+    },
+  },
+  required: ["questions"],
+};
+
+export const compAnswerInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    answer: { type: "string" },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    reasoning: { type: "string" },
+  },
+  required: ["answer", "confidence", "reasoning"],
 };

@@ -121,6 +121,7 @@ export function createInitialStateFromCast(seed: number, houseguests: Houseguest
     haveNotMoraleDeltas: {},
     doubleEvictionRemaining: 0,
     usedCompTypes: [],
+    publicHistory: [],
   };
   ensureAllNotebooks(state);
   return state;

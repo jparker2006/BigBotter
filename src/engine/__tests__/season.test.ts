@@ -246,4 +246,19 @@ describe("Milestone 1 deterministic season", () => {
     expect(notebooksWithMemories.length).toBeGreaterThan(0);
     expect(relationshipChanges.length).toBeGreaterThan(0);
   });
+
+  it("emits M5 flavor and knowledge-comp answer data", async () => {
+    const { state, tape } = await runWithDecider(2026, (rng) => new RandomDecider(rng));
+    expect(eventsOf(tape, "confessional").length).toBeGreaterThan(0);
+    expect(state.publicHistory.length).toBeGreaterThan(0);
+
+    const knowledgeComps = eventsOf(tape, "comp").filter((event) =>
+      ["OTEV", "Memory", "QnA", "Puzzle", "Knockout"].includes(event.compType),
+    );
+    expect(knowledgeComps.length).toBeGreaterThan(0);
+    expect(knowledgeComps.some((event) => event.rounds.some((round) => round.question && round.answers))).toBe(true);
+
+    const otev = knowledgeComps.find((event) => event.compType === "OTEV");
+    expect(otev?.rounds.some((round) => round.question?.includes("OTEV"))).toBe(true);
+  });
 });

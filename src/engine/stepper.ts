@@ -2,8 +2,9 @@ import { MORALE, DOUBLE_EVICTION_AT_HOUSE_SIZE } from "./constants";
 import type { AgentDecider } from "./agents/decider";
 import { withValidation } from "./agents/validateDecision";
 import { pickHohComp, pickVetoComp } from "./comps/compScheduler";
-import { resolveComp } from "./comps/resolveComp";
+import { resolveCompWithFlavor } from "./comps/resolveComp";
 import { runFinalHoh, runFinalJuryVote } from "./endgame";
+import { confessionalEvent, confessionalText, hostEvent, rememberPublic } from "./flavor";
 import { isJuror } from "./jury";
 import { applyMoraleDelta } from "./morale";
 import type { Rng } from "./rng";
@@ -71,7 +72,8 @@ async function runHohComp(state: GameState, deps: StepDeps): Promise<StepResult>
   if (startingDoubleEviction) {
     state.isDoubleEviction = true;
     state.doubleEvictionRemaining = 2;
-    events.push({ t: "host", week: state.week, text: "*** DOUBLE EVICTION ***" });
+    events.push(await hostEvent(state, deps.decider, "double_eviction", "*** DOUBLE EVICTION ***"));
+    rememberPublic(state, `Week ${state.week}: a double eviction was announced.`);
   }
 
   const previousHohId = state.hohId;
@@ -79,7 +81,11 @@ async function runHohComp(state: GameState, deps: StepDeps): Promise<StepResult>
   clearCompetitionFlags(state);
   const compType = pickHohComp(deps.rng, state.usedCompTypes, state.week, previousHohId !== null && state.isDoubleEviction);
   const players = eligibleIds.map((id) => getHouseguest(state, id));
-  const resolved = resolveComp(compType, players, deps.rng);
+  const resolved = await resolveCompWithFlavor(compType, players, deps.rng, {
+    state,
+    decider: deps.decider,
+    phase: "hoh_comp",
+  });
   pushUsedComp(state, compType);
 
   state.hohId = resolved.winnerId;
@@ -92,14 +98,21 @@ async function runHohComp(state: GameState, deps: StepDeps): Promise<StepResult>
   }
 
   events.push({ t: "comp", week: state.week, phase: "hoh_comp", ...resolved });
-  events.push({
-    t: "host",
-    week: state.week,
-    text: `Week ${state.week}: ${getHouseguest(state, resolved.winnerId).name} is HOH. Have-nots: ${
+  rememberPublic(state, `Week ${state.week}: ${getHouseguest(state, resolved.winnerId).name} won HOH.`);
+  if (state.haveNotIds.length > 0) {
+    rememberPublic(state, `Week ${state.week}: have-nots were ${state.haveNotIds.map((id) => getHouseguest(state, id).name).join(", ")}.`);
+  }
+  events.push(await hostEvent(
+    state,
+    deps.decider,
+    "hoh",
+    `Week ${state.week}: ${getHouseguest(state, resolved.winnerId).name} is HOH. Have-nots: ${
       state.haveNotIds.map((id) => getHouseguest(state, id).name).join(", ") || "none"
     }.`,
-    payload: { haveNotIds: [...state.haveNotIds], previousHohId },
-  });
+    [resolved.winnerId, ...state.haveNotIds],
+    { haveNotIds: [...state.haveNotIds], previousHohId },
+  ));
+  events.push(await confessionalEvent(state, deps.decider, resolved.winnerId, "hoh_win", legalNominees(state)));
 
   state.phase = "scheme_1";
   return { state, events, done: false };
@@ -120,18 +133,27 @@ async function runNominations(state: GameState, deps: StepDeps): Promise<StepRes
   );
   applyNominations(state, nomineeIds);
   recordNominationConsequences(state, state.hohId!, nomineeIds);
+  rememberPublic(
+    state,
+    `Week ${state.week}: ${getHouseguest(state, state.hohId!).name} nominated ${nomineeNames(state)} for eviction.`,
+  );
   state.phase = "scheme_2";
+  const events: GameEvent[] = [
+    {
+      t: "ceremony",
+      week: state.week,
+      kind: "nomination",
+      payload: { hohId: state.hohId, nomineeIds: [...state.nomineeIds] },
+    },
+    await hostEvent(state, deps.decider, "nominations", `Nominated: ${nomineeNames(state)}.`, [state.hohId!, ...state.nomineeIds]),
+    await confessionalEvent(state, deps.decider, state.hohId!, "nomination", [...state.nomineeIds]),
+  ];
+  for (const nomineeId of state.nomineeIds) {
+    events.push(await confessionalEvent(state, deps.decider, nomineeId, "nomination", [state.hohId!]));
+  }
   return {
     state,
-    events: [
-      {
-        t: "ceremony",
-        week: state.week,
-        kind: "nomination",
-        payload: { hohId: state.hohId, nomineeIds: [...state.nomineeIds] },
-      },
-      { t: "host", week: state.week, text: `Nominated: ${nomineeNames(state)}.` },
-    ],
+    events,
     done: false,
   };
 }
@@ -139,19 +161,27 @@ async function runNominations(state: GameState, deps: StepDeps): Promise<StepRes
 async function runVetoComp(state: GameState, deps: StepDeps): Promise<StepResult> {
   const draw = await vetoPlayerDraw(state, deps.rng, deps.decider);
   const compType = pickVetoComp(deps.rng, state.usedCompTypes, activeHouseguests(state).length);
-  const resolved = resolveComp(compType, draw.map((id) => getHouseguest(state, id)), deps.rng);
+  const resolved = await resolveCompWithFlavor(compType, draw.map((id) => getHouseguest(state, id)), deps.rng, {
+    state,
+    decider: deps.decider,
+    phase: "veto_comp",
+  });
   pushUsedComp(state, compType);
   state.vetoHolderId = resolved.winnerId;
   for (const houseguest of state.houseguests) {
     houseguest.hasVeto = houseguest.id === resolved.winnerId;
   }
   applyMoraleDelta(getHouseguest(state, resolved.winnerId), MORALE.WIN_VETO);
+  rememberPublic(state, `Week ${state.week}: ${getHouseguest(state, resolved.winnerId).name} won the Power of Veto.`);
   state.phase = "scheme_3";
   return {
     state,
     events: [
       { t: "comp", week: state.week, phase: "veto_comp", ...resolved },
-      { t: "host", week: state.week, text: `${getHouseguest(state, resolved.winnerId).name} wins the Power of Veto.` },
+      await hostEvent(state, deps.decider, "veto", `${getHouseguest(state, resolved.winnerId).name} wins the Power of Veto.`, [
+        resolved.winnerId,
+      ]),
+      await confessionalEvent(state, deps.decider, resolved.winnerId, "veto_win", [...state.nomineeIds]),
     ],
     done: false,
   };
@@ -193,6 +223,17 @@ async function runVetoCeremony(state: GameState, deps: StepDeps): Promise<StepRe
   if (replacementNomId) {
     recordNominationConsequences(state, state.hohId!, [replacementNomId]);
   }
+  rememberPublic(
+    state,
+    decision.use
+      ? `Week ${state.week}: ${getHouseguest(state, state.vetoHolderId!).name} used the veto on ${getHouseguest(
+          state,
+          decision.savedNomineeId!,
+        ).name}; final nominees were ${nomineeNames(state)}.`
+      : `Week ${state.week}: ${getHouseguest(state, state.vetoHolderId!).name} did not use the veto; final nominees were ${nomineeNames(
+          state,
+        )}.`,
+  );
   state.phase = "scheme_4";
 
   return {
@@ -210,13 +251,16 @@ async function runVetoCeremony(state: GameState, deps: StepDeps): Promise<StepRe
           nomineeIds: [...state.nomineeIds],
         },
       },
-      {
-        t: "host",
-        week: state.week,
-        text: decision.use
+      await hostEvent(
+        state,
+        deps.decider,
+        "veto",
+        decision.use
           ? `The veto is used. Final nominees: ${nomineeNames(state)}.`
           : `The veto is not used. Final nominees: ${nomineeNames(state)}.`,
-      },
+        [state.vetoHolderId!, ...state.nomineeIds],
+      ),
+      await confessionalEvent(state, deps.decider, state.vetoHolderId!, "veto_ceremony", [...state.nomineeIds]),
     ],
     done: false,
   };
@@ -295,7 +339,13 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       () => deps.rng.pick(state.nomineeIds),
     );
     recordVoteConsequences(state, voterId, evictedId, true);
-    events.push({ t: "vote", week: state.week, voterId, targetId: evictedId, confessional: "Final 4 sole vote." });
+    events.push({
+      t: "vote",
+      week: state.week,
+      voterId,
+      targetId: evictedId,
+      confessional: await confessionalText(state, deps.decider, voterId, "eviction_vote", [...state.nomineeIds]),
+    });
     events.push({
       t: "ceremony",
       week: state.week,
@@ -303,6 +353,9 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       payload: { nomineeIds: [...state.nomineeIds], voteCounts: { [evictedId]: 1 }, evictedId, finalFourSoleVote: true },
     });
     events.push(evictHouseguest(state, evictedId, preEvictionHouseSize));
+    rememberPublic(state, `Week ${state.week}: ${getHouseguest(state, evictedId).name} was evicted by the Final 4 sole vote.`);
+    events.push(await hostEvent(state, deps.decider, "eviction", `${getHouseguest(state, evictedId).name} is evicted.`, [evictedId]));
+    events.push(await confessionalEvent(state, deps.decider, evictedId, "evicted", []));
     applySurvivalMorale(state, evictedId);
     advanceAfterEviction(state);
     return { state, events, done: false };
@@ -323,12 +376,13 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       (decision) => validateEvictionVote(state, decision),
       () => deps.rng.pick(state.nomineeIds),
     );
-      return { voterId, targetId };
+      const confessional = await confessionalText(state, deps.decider, voterId, "eviction_vote", [...state.nomineeIds]);
+      return { voterId, targetId, confessional };
     }),
   );
   for (const vote of votes) {
     recordVoteConsequences(state, vote.voterId, vote.targetId, false);
-    events.push({ t: "vote", week: state.week, voterId: vote.voterId, targetId: vote.targetId });
+    events.push({ t: "vote", week: state.week, voterId: vote.voterId, targetId: vote.targetId, confessional: vote.confessional });
   }
 
   const counts = tallyVotes(votes);
@@ -349,7 +403,14 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       () => deps.rng.pick(result.leaders),
     );
     recordVoteConsequences(state, state.hohId!, evictedId, true);
-    events.push({ t: "vote", week: state.week, voterId: state.hohId!, targetId: evictedId, isTiebreaker: true });
+    events.push({
+      t: "vote",
+      week: state.week,
+      voterId: state.hohId!,
+      targetId: evictedId,
+      isTiebreaker: true,
+      confessional: await confessionalText(state, deps.decider, state.hohId!, "eviction_vote", result.leaders),
+    });
   } else {
     evictedId = result.leaders[0]!;
   }
@@ -361,6 +422,14 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
     payload: { nomineeIds: [...state.nomineeIds], voteCounts: counts, tied: result.tied, evictedId },
   });
   events.push(evictHouseguest(state, evictedId, preEvictionHouseSize));
+  rememberPublic(
+    state,
+    `Week ${state.week}: ${getHouseguest(state, evictedId).name} was evicted by a vote of ${Object.entries(counts)
+      .map(([id, count]) => `${count}-${getHouseguest(state, id).name}`)
+      .join(", ")}.`,
+  );
+  events.push(await hostEvent(state, deps.decider, "eviction", `${getHouseguest(state, evictedId).name} is evicted.`, [evictedId]));
+  events.push(await confessionalEvent(state, deps.decider, evictedId, "evicted", []));
   applySurvivalMorale(state, evictedId);
   advanceAfterEviction(state);
 

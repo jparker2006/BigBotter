@@ -1,7 +1,12 @@
 import type {
   AgentDecider,
+  CompAnswer,
+  CompAnswerContext,
+  CompQuestion,
+  CompQuestionContext,
   ConversationPlan,
   DecisionContext,
+  HostNarrationContext,
   SocialPlanContext,
   SocialTurn,
   SocialTurnContext,
@@ -17,10 +22,16 @@ import {
   juryVoteSchema,
   conversationPlanInputSchema,
   conversationPlanSchema,
+  compAnswerInputSchema,
+  compAnswerSchema,
+  compQuestionInputSchema,
+  compQuestionSchema,
   nominationInputSchema,
   nominationSchema,
   socialTurnInputSchema,
   socialTurnSchema,
+  textLineInputSchema,
+  textLineSchema,
   vetoUseInputSchema,
   vetoUseSchema,
 } from "./haikuSchemas";
@@ -29,6 +40,10 @@ const SYSTEM_PROMPT = `You are playing a fictional Big Brother US-style strategy
 Make strategic, self-interested decisions using only the provided game state and actor persona.
 Return decisions only through the required tool. Use only legal ids from the prompt.
 Do not invent secret knowledge, alliances, conversations, or events that are not provided.`;
+
+const HOST_SYSTEM_PROMPT = `You are the host narrator for a fictional Big Brother-style game called Big Botter.
+You are a stylized homage to the crisp, dramatic reality-competition host role, not a real person.
+Do not impersonate or quote a real host. Keep narration punchy, polished, and episode-ready.`;
 
 function basePrompt(context: DecisionContext): string {
   return [
@@ -183,5 +198,76 @@ Task: Speak exactly one line as the actor. Also return relationship deltas, memo
       secretsShared: result.secretsShared,
       readsShared: result.readsShared,
     };
+  }
+
+  async confessional(context: DecisionContext): Promise<string> {
+    const result = await this.caller.callTool({
+      toolName: "diary_room_confessional",
+      description: "Generate one private Diary Room confessional in the actor's voice.",
+      inputSchema: textLineInputSchema,
+      zodSchema: textLineSchema,
+      system: `${SYSTEM_PROMPT}
+Diary Room confessionals can be strategic, funny, profane, petty, and candid. Do not use slurs. Keep it fictional and concise.`,
+      prompt: `${basePrompt(context)}\n\nConfessional reason: ${context.reason}
+Relevant ids: ${context.legalIds.join(", ") || "none"}
+Task: Give one private to-camera Diary Room confessional, 1-3 sentences, in the actor's talking style. It may contradict what they say publicly.`,
+    });
+    return result.text;
+  }
+
+  async hostNarration(context: HostNarrationContext): Promise<string> {
+    const result = await this.caller.callTool({
+      toolName: "host_narration",
+      description: "Generate one polished host narration line.",
+      inputSchema: textLineInputSchema,
+      zodSchema: textLineSchema,
+      system: HOST_SYSTEM_PROMPT,
+      prompt: `Beat: ${context.beat}
+Raw event: ${context.text}
+Focus ids: ${context.focusIds?.join(", ") || "none"}
+Week: ${context.state.week}
+Phase: ${context.state.phase}
+Task: Rewrite the raw event as one concise host line. Keep the facts unchanged.`,
+    });
+    return result.text;
+  }
+
+  async generateCompQuestions(context: CompQuestionContext): Promise<CompQuestion[]> {
+    const history = context.state.publicHistory.slice(-30).join("\n") || "No completed events yet.";
+    const result = await this.caller.callTool({
+      toolName: "generate_comp_questions",
+      description: "Generate knowledge competition clues from actual season history.",
+      inputSchema: compQuestionInputSchema,
+      zodSchema: compQuestionSchema,
+      system: HOST_SYSTEM_PROMPT,
+      prompt: `Competition: ${context.compType}
+Phase: ${context.phase}
+Needed questions: ${context.roundCount}
+Players: ${context.playerIds.join(", ")}
+Actual public season history:
+${history}
+
+Task: Generate exactly ${context.roundCount} questions based only on actual season-history lines above.
+For OTEV, make each prompt a short mean rhyming animatronic clue. correctAnswer should be the specific event or named answer from the source line.
+For other knowledge comps, use clear recall questions. Do not invent events.`,
+    });
+    return result.questions.slice(0, context.roundCount);
+  }
+
+  async answerCompQuestion(context: CompAnswerContext): Promise<CompAnswer> {
+    const result = await this.caller.callTool({
+      toolName: "answer_comp_question",
+      description: "Answer one competition question as the actor.",
+      inputSchema: compAnswerInputSchema,
+      zodSchema: compAnswerSchema,
+      system: SYSTEM_PROMPT,
+      prompt: `${basePrompt(context)}
+
+Competition: ${context.compType}
+Round: ${context.round}
+Question: ${context.question.prompt}
+Task: Answer as the actor from memory. If unsure, guess plausibly. Return only the answer and confidence.`,
+    });
+    return { answer: result.answer, confidence: result.confidence };
   }
 }

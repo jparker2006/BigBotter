@@ -39,11 +39,19 @@ export function renderConsoleTape(tape: SeasonTape): string[] {
     if (event.t === "comp") {
       const players = event.playerIds.map((id) => name(tape, id)).join(", ");
       const winner = name(tape, event.winnerId);
-      lines.push(`${event.phase}: ${event.compType} (${players}) -> ${winner}`);
+      lines.push(`${event.phase}: ${event.title ? `${event.title} / ` : ""}${event.compType} (${players}) -> ${winner}`);
+      if (event.narration) {
+        lines.push(`  ${event.narration}`);
+      }
       if (event.rounds.length > 1) {
         for (const round of event.rounds) {
+          if (round.question) {
+            lines.push(`  Clue ${round.round}: ${round.question}`);
+          }
           lines.push(`  Round ${round.round}: eliminated ${round.eliminatedId ? name(tape, round.eliminatedId) : "none"}`);
         }
+      } else if (event.rounds[0]?.question) {
+        lines.push(`  Question: ${event.rounds[0].question}`);
       }
       continue;
     }
@@ -95,6 +103,9 @@ export function renderConsoleTape(tape: SeasonTape): string[] {
           event.targetId,
         )}.`,
       );
+      if (event.confessional) {
+        lines.push(`  DR ${name(tape, event.voterId)}: ${event.confessional}`);
+      }
       continue;
     }
 
@@ -106,6 +117,11 @@ export function renderConsoleTape(tape: SeasonTape): string[] {
 
     if (event.t === "jury_vote") {
       lines.push(`Jury vote: ${name(tape, event.jurorId)} votes for ${name(tape, event.finalistId)}.`);
+      continue;
+    }
+
+    if (event.t === "confessional") {
+      lines.push(`Diary Room - ${name(tape, event.speakerId)}: ${event.text}`);
     }
   }
 
