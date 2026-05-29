@@ -301,8 +301,9 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
     return { state, events, done: false };
   }
 
-  const votes: { voterId: string; targetId: string }[] = [];
-  for (const voterId of evictionVoters(state)) {
+  const voters = evictionVoters(state);
+  const votes = await Promise.all(
+    voters.map(async (voterId) => {
     const targetId = await withValidation(
       () =>
         deps.decider.castEvictionVote({
@@ -315,8 +316,11 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       (decision) => validateEvictionVote(state, decision),
       () => deps.rng.pick(state.nomineeIds),
     );
-    votes.push({ voterId, targetId });
-    events.push({ t: "vote", week: state.week, voterId, targetId });
+      return { voterId, targetId };
+    }),
+  );
+  for (const vote of votes) {
+    events.push({ t: "vote", week: state.week, voterId: vote.voterId, targetId: vote.targetId });
   }
 
   const counts = tallyVotes(votes);
@@ -395,4 +399,3 @@ export async function step(inputState: GameState, deps: StepDeps): Promise<StepR
     done: false,
   };
 }
-

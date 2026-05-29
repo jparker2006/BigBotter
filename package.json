@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "sim": "tsx scripts/sim.ts",
+    "sim:haiku": "tsx scripts/simHaiku.ts",
     "generate:cast": "tsx scripts/generateCast.ts",
     "generate:portraits": "tsx scripts/generatePortraits.ts",
     "test": "vitest run",
@@ -17,8 +18,10 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@google/genai": "^2.7.0",
     "next": "16.2.6",
+    "p-limit": "^7.3.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

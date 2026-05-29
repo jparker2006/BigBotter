@@ -87,7 +87,8 @@ export async function runFinalJuryVote(
   }
 
   const tally: Record<string, number> = Object.fromEntries(finalists.map((id) => [id, 0]));
-  for (const jurorId of state.juryIds) {
+  const juryVotes = await Promise.all(
+    state.juryIds.map(async (jurorId) => {
     const finalistId = await withValidation(
       () =>
         deps.decider.juryVote({
@@ -100,8 +101,13 @@ export async function runFinalJuryVote(
       (decision) => (finalists.includes(decision) ? decision : null),
       () => deps.rng.pick(finalists),
     );
-    tally[finalistId] = (tally[finalistId] ?? 0) + 1;
-    events.push({ t: "jury_vote", jurorId, finalistId, reasoning: "Random placeholder juror vote." });
+      return { jurorId, finalistId };
+    }),
+  );
+
+  for (const vote of juryVotes) {
+    tally[vote.finalistId] = (tally[vote.finalistId] ?? 0) + 1;
+    events.push({ t: "jury_vote", jurorId: vote.jurorId, finalistId: vote.finalistId, reasoning: "Juror decision." });
   }
 
   const winnerId = finalists.sort((a, b) => (tally[b] ?? 0) - (tally[a] ?? 0))[0]!;

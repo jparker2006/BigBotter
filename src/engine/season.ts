@@ -1,4 +1,5 @@
 import { RandomDecider } from "./agents/randomDecider";
+import type { AgentDecider } from "./agents/decider";
 import { createInitialState } from "./houseguestFactory";
 import { createRng } from "./rng";
 import { step } from "./stepper";
@@ -13,8 +14,16 @@ export async function runSeason(seed = Date.now()): Promise<SeasonTape> {
 }
 
 export async function runSeasonFromState(seed: number, state0: GameState, rng = createRng(seed)): Promise<SeasonTape> {
+  return runSeasonWithDecider(seed, state0, new RandomDecider(rng), rng);
+}
+
+export async function runSeasonWithDecider(
+  _seed: number,
+  state0: GameState,
+  decider: AgentDecider,
+  rng = createRng(state0.seed),
+): Promise<SeasonTape> {
   const tape = new TapeWriter(state0);
-  const decider = new RandomDecider(rng);
   let state = state0;
   let done = false;
   let guard = 0;
