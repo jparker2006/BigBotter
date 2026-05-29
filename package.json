@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "sim": "tsx scripts/sim.ts",
+    "generate:cast": "tsx scripts/generateCast.ts",
+    "generate:portraits": "tsx scripts/generatePortraits.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "next dev",
@@ -12,6 +14,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
+    "@google/genai": "^2.7.0",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"

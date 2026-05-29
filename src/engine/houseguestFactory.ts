@@ -105,13 +105,24 @@ export function makeCast(rng: Rng): Houseguest[] {
 }
 
 export function createInitialState(seed: number, rng: Rng): GameState {
+  return createInitialStateFromCast(seed, makeCast(rng));
+}
+
+export function createInitialStateFromCast(seed: number, houseguests: Houseguest[]): GameState {
   return {
     seasonId: `season-${seed}`,
     seed,
     week: 1,
     phase: "hoh_comp",
     isDoubleEviction: false,
-    houseguests: makeCast(rng),
+    houseguests: houseguests.map((houseguest) => ({
+      ...houseguest,
+      status: "active",
+      isHOH: false,
+      isNominated: false,
+      hasVeto: false,
+      isHaveNot: false,
+    })),
     hohId: null,
     nomineeIds: [],
     vetoHolderId: null,
@@ -124,4 +135,3 @@ export function createInitialState(seed: number, rng: Rng): GameState {
     usedCompTypes: [],
   };
 }
-

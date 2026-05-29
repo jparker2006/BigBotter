@@ -4,10 +4,15 @@ import { createRng } from "./rng";
 import { step } from "./stepper";
 import { TapeWriter } from "./tape";
 import type { SeasonTape } from "./types";
+import type { GameState } from "./types";
 
 export async function runSeason(seed = Date.now()): Promise<SeasonTape> {
   const rng = createRng(seed);
   const state0 = createInitialState(seed, rng);
+  return runSeasonFromState(seed, state0, rng);
+}
+
+export async function runSeasonFromState(seed: number, state0: GameState, rng = createRng(seed)): Promise<SeasonTape> {
   const tape = new TapeWriter(state0);
   const decider = new RandomDecider(rng);
   let state = state0;
@@ -27,4 +32,3 @@ export async function runSeason(seed = Date.now()): Promise<SeasonTape> {
 
   return tape.build();
 }
-
