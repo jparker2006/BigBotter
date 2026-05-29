@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState, useTransition } from "react";
 import type { GameEvent, RoomId, SeasonTape } from "../engine/types";
 import type { RunMeta } from "../server/runs/runStore";
-import { deleteSavedRun, generateReplayTape, listSavedRuns, loadSavedRun, narrateJulieLine } from "./actions";
+import { deleteSavedRun, listSavedRuns, loadSavedRun, narrateJulieLine } from "./actions";
 import BroadcastStage from "./BroadcastStage";
 import DebugLogPanel from "./DebugLogPanel";
 import { buildReplayFrame, describeEvent, nameFor, type WallHouseguest } from "./replayModel";
@@ -114,6 +114,9 @@ export default function ReplayPlayer() {
   const [winnerPredictionId, setWinnerPredictionId] = useState("");
   const [evictionPredictionId, setEvictionPredictionId] = useState("");
   const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [genStatus, setGenStatus] = useState<string | null>(null);
   const [isVoicing, startVoiceTransition] = useTransition();
   const [isPending, startTransition] = useTransition();
   const cursor = useReplayStore((state) => state.cursor);
@@ -129,9 +132,9 @@ export default function ReplayPlayer() {
 
   useEffect(() => {
     if (!tape || !isPlaying) return;
-    const timer = window.setInterval(() => advance(tape.events.length - 1), 950);
+    const timer = window.setInterval(() => advance(tape.events.length - 1, isStreaming), 950);
     return () => window.clearInterval(timer);
-  }, [advance, isPlaying, tape]);
+  }, [advance, isPlaying, tape, isStreaming]);
 
   useEffect(() => {
     listSavedRuns().then(setRuns).catch(() => setRuns([]));
@@ -146,19 +149,66 @@ export default function ReplayPlayer() {
     setVoiceStatus(null);
   }
 
-  function generate() {
+  // Streams the season from /api/generate so playback can start on week 1 while the rest
+  // generates. Events are appended as they arrive; the player stays "live" at the frontier
+  // (advance keepPlaying) until the stream completes.
+  async function generate() {
     setError(null);
     pause();
-    startTransition(async () => {
-      try {
-        const parsedSeed = Number(seed);
-        const { tape: nextTape, meta } = await generateReplayTape(Number.isInteger(parsedSeed) ? parsedSeed : Date.now(), useHaiku);
-        applyLoadedTape(nextTape, meta.id);
-        setRuns(await listSavedRuns());
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Failed to generate tape.");
+    setIsGenerating(true);
+    setIsStreaming(true);
+    setGenStatus("Starting…");
+    let live: SeasonTape | null = null;
+    let startedPlaying = false;
+    try {
+      const parsedSeed = Number(seed);
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seed: Number.isInteger(parsedSeed) ? parsedSeed : Date.now(), useHaiku }),
+      });
+      if (!response.ok || !response.body) {
+        throw new Error("Generation request failed.");
       }
-    });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const chunk = JSON.parse(line);
+          if (chunk.t === "state0") {
+            live = { state0: chunk.state0, events: [] };
+            applyLoadedTape(live, null);
+          } else if (chunk.t === "step" && live) {
+            live = { state0: live.state0, events: [...live.events, ...chunk.events] };
+            setTape(live);
+            setGenStatus(`Live · Week ${chunk.week}`);
+            if (!startedPlaying && live.events.length > 0) {
+              play();
+              startedPlaying = true;
+            }
+          } else if (chunk.t === "done") {
+            setLoadedRunId(chunk.meta.id);
+            setGenStatus(null);
+            listSavedRuns().then(setRuns).catch(() => {});
+          } else if (chunk.t === "error") {
+            throw new Error(chunk.message);
+          }
+        }
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to generate tape.");
+      setGenStatus(null);
+    } finally {
+      setIsGenerating(false);
+      setIsStreaming(false);
+    }
   }
 
   function handleLoadRun(id: string) {
@@ -224,6 +274,7 @@ export default function ReplayPlayer() {
   const activeHouseguests = frame?.houseguests.filter((houseguest) => houseguest.currentStatus === "active") ?? [];
   const winnerPrediction = frame?.houseguests.find((houseguest) => houseguest.id === winnerPredictionId);
   const evictionPrediction = frame?.houseguests.find((houseguest) => houseguest.id === evictionPredictionId);
+  const busy = isPending || isGenerating;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#041018] text-white">
@@ -273,8 +324,8 @@ export default function ReplayPlayer() {
                 className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3 font-mono text-sm text-white outline-none ring-yellow-300/0 transition focus:ring-4"
                 aria-label="Replay seed"
               />
-              <button className="btn-primary" disabled={isPending} onClick={generate}>
-                {isPending ? (useHaiku ? "Scheming…" : "Generating…") : tape ? "New Tape" : "Generate Tape"}
+              <button className="btn-primary" disabled={busy} onClick={generate}>
+                {isGenerating ? genStatus ?? (useHaiku ? "Scheming…" : "Generating…") : tape ? "New Tape" : "Generate Tape"}
               </button>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
@@ -291,7 +342,7 @@ export default function ReplayPlayer() {
                 role="switch"
                 aria-checked={useHaiku}
                 aria-label="Toggle AI houseguests"
-                disabled={isPending}
+                disabled={busy}
                 onClick={() => setUseHaiku((value) => !value)}
                 className={`relative h-7 w-12 shrink-0 rounded-full transition ${useHaiku ? "bg-cyan-400" : "bg-white/20"}`}
               >
@@ -300,19 +351,19 @@ export default function ReplayPlayer() {
             </div>
             {error ? <p className="mt-3 rounded-xl bg-red-500/15 p-3 text-sm text-red-100">{error}</p> : null}
             <div className="mt-5 flex flex-wrap gap-2">
-              <button className="btn-secondary" disabled={!tape || isPending} onClick={isPlaying ? pause : play}>
+              <button className="btn-secondary" disabled={!tape || busy} onClick={isPlaying ? pause : play}>
                 {isPlaying ? "Pause" : "Play"}
               </button>
-              <button className="btn-secondary" disabled={!tape || isPending || cursor === 0} onClick={rewind}>
+              <button className="btn-secondary" disabled={!tape || busy || cursor === 0} onClick={rewind}>
                 Rewind
               </button>
-              <button className="btn-secondary" disabled={!tape || isPending} onClick={reset}>
+              <button className="btn-secondary" disabled={!tape || busy} onClick={reset}>
                 Reset
               </button>
-              <button className="btn-secondary" disabled={!tape || isPending} onClick={toggleGodMode}>
+              <button className="btn-secondary" disabled={!tape || busy} onClick={toggleGodMode}>
                 {godMode ? "Hide God Mode" : "God Mode"}
               </button>
-              <button className="btn-secondary" disabled={!tape || isPending || isVoicing} onClick={playHostVoice}>
+              <button className="btn-secondary" disabled={!tape || busy || isVoicing} onClick={playHostVoice}>
                 {isVoicing ? "Voicing..." : "Julie Voice"}
               </button>
             </div>
@@ -351,8 +402,16 @@ export default function ReplayPlayer() {
               </div>
             ) : null}
             <div className="mt-6">
-              <div className="flex justify-between text-xs uppercase tracking-[0.25em] text-slate-400">
-                <span>Replay</span>
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.25em] text-slate-400">
+                <span className="flex items-center gap-2">
+                  Replay
+                  {isStreaming ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-black text-red-200">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                      {genStatus ?? "LIVE"}
+                    </span>
+                  ) : null}
+                </span>
                 <span>{tape ? `${cursor + 1}/${tape.events.length}` : "0/0"}</span>
               </div>
               <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/10">
@@ -378,7 +437,7 @@ export default function ReplayPlayer() {
             <SavedRunsPanel
               runs={runs}
               loadedRunId={loadedRunId}
-              disabled={isPending}
+              disabled={busy}
               onLoad={handleLoadRun}
               onDelete={handleDeleteRun}
             />
