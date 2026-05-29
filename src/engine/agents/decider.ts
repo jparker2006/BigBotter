@@ -91,6 +91,11 @@ export type CompAnswer = {
   confidence: number;
 };
 
+export type JuryVote = {
+  finalistId: string;
+  reasoning: string;
+};
+
 export type CompQuestionContext = {
   state: GameState;
   compType: CompType;
@@ -111,7 +116,7 @@ export interface AgentDecider {
   pickReplacementNom(context: DecisionContext & { savedNomineeId: string }): Promise<string>;
   castEvictionVote(context: DecisionContext & { nomineeIds: string[]; isTiebreaker?: boolean }): Promise<string>;
   finalHohEviction(context: DecisionContext & { finalistOptions: string[] }): Promise<string>;
-  juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<string>;
+  juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<JuryVote>;
   pickHouseguestChoice(context: DecisionContext): Promise<string>;
   decideMovement?(context: DecisionContext): Promise<string | null>;
   initiateConversation?(context: DecisionContext): Promise<string[]>;

@@ -56,6 +56,11 @@ export default function SavedRunsPanel({
                     <span className="truncate text-sm font-bold text-white">
                       {run.winnerName ? `🏆 ${run.winnerName}` : "Season"}
                     </span>
+                    {!run.complete ? (
+                      <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-200">
+                        in progress
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 truncate text-[11px] text-slate-400">
                     seed {run.seed} · {run.weeks}wk · {run.eventCount} events

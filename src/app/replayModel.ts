@@ -24,10 +24,6 @@ export type ReplayFrame = {
 
 const ROOMS: RoomId[] = ["hoh_room", "bedrooms", "kitchen", "living_room", "backyard", "diary_room", "have_not_room", "storage"];
 
-function eventWeek(event: GameEvent | null): number {
-  return event && "week" in event && typeof event.week === "number" ? event.week : 1;
-}
-
 export function nameFor(tape: SeasonTape, id: string): string {
   return tape.state0.houseguests.find((houseguest) => houseguest.id === id)?.name ?? id;
 }
@@ -114,12 +110,18 @@ export function buildReplayFrame(tape: SeasonTape, cursor: number): ReplayFrame 
   let hohId: string | null = null;
   let nomineeIds: string[] = [];
   let vetoHolderId: string | null = null;
+  // Carry the week forward from the last event that has one — confessional/movement/jury_vote
+  // events have no week field, so reading the current event alone made the UI flash "Week 1".
+  let week = 1;
 
   for (const houseguest of tape.state0.houseguests) {
     locations.set(houseguest.id, houseguest.location);
   }
 
   for (const event of events) {
+    if ("week" in event && typeof event.week === "number") {
+      week = event.week;
+    }
     if (event.t === "comp" && event.phase === "hoh_comp") {
       hohId = event.winnerId;
       nomineeIds = [];
@@ -171,7 +173,7 @@ export function buildReplayFrame(tape: SeasonTape, cursor: number): ReplayFrame 
 
   return {
     currentEvent,
-    week: eventWeek(currentEvent),
+    week,
     houseguests,
     rooms,
     activeCount: houseguests.filter((houseguest) => houseguest.currentStatus === "active").length,

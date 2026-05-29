@@ -184,7 +184,7 @@ export default function ReplayPlayer() {
           const chunk = JSON.parse(line);
           if (chunk.t === "state0") {
             live = { state0: chunk.state0, events: [] };
-            applyLoadedTape(live, null);
+            applyLoadedTape(live, chunk.runId ?? null);
           } else if (chunk.t === "step" && live) {
             live = { state0: live.state0, events: [...live.events, ...chunk.events] };
             setTape(live);

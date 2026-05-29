@@ -7,13 +7,15 @@ import type {
   ConversationPlan,
   DecisionContext,
   HostNarrationContext,
+  JuryVote,
   SocialPlanContext,
   SocialTurn,
   SocialTurnContext,
 } from "../../engine/agents/decider";
 import { withValidation } from "../../engine/agents/validateDecision";
 import type { VetoUseDecision } from "../../engine/rules/veto";
-import { actorPersona, decisionStateSummary, legalIdList } from "./gameSummary";
+import { getHouseguest } from "../../engine/selectors";
+import { actorPersona, compactNotebook, compactState, decisionStateSummary, legalIdList } from "./gameSummary";
 import { AnthropicToolCaller } from "./anthropicTool";
 import {
   idChoiceInputSchema,
@@ -120,7 +122,7 @@ export class HaikuDecider implements AgentDecider {
     return result.selectedId;
   }
 
-  async juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<string> {
+  async juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<JuryVote> {
     const result = await this.caller.callTool({
       toolName: "jury_vote",
       description: "Choose one finalist id to vote for as winner.",
@@ -129,9 +131,9 @@ export class HaikuDecider implements AgentDecider {
       system: SYSTEM_PROMPT,
       prompt: `${basePrompt(context)}\n\nFinalists: ${context.finalistIds.join(
         ", ",
-      )}.\nTask: As a juror, vote for the finalist who deserves to win based on gameplay respect and how you were treated.`,
+      )}.\nTask: As a juror, vote for the finalist who deserves to win based on gameplay respect and how you were treated. Give a short, candid jury-speech reason for your vote.`,
     });
-    return result.finalistId;
+    return { finalistId: result.finalistId, reasoning: result.reasoning };
   }
 
   async pickHouseguestChoice(context: DecisionContext): Promise<string> {
@@ -201,6 +203,9 @@ Task: Speak exactly one line as the actor. Also return relationship deltas, memo
   }
 
   async confessional(context: DecisionContext): Promise<string> {
+    // Light prompt: persona + compact situation + the juicy notebook bits only (no full roster
+    // or relationship table) — confessionals were the #1 token consumer.
+    const relevant = context.legalIds.map((id) => getHouseguest(context.state, id).name).join(", ") || "none";
     const result = await this.caller.callTool({
       toolName: "diary_room_confessional",
       description: "Generate one private Diary Room confessional in the actor's voice.",
@@ -208,9 +213,14 @@ Task: Speak exactly one line as the actor. Also return relationship deltas, memo
       zodSchema: textLineSchema,
       system: `${SYSTEM_PROMPT}
 Diary Room confessionals can be strategic, funny, profane, petty, and candid. Do not use slurs. Keep it fictional and concise.`,
-      prompt: `${basePrompt(context)}\n\nConfessional reason: ${context.reason}
-Relevant ids: ${context.legalIds.join(", ") || "none"}
-Task: Give one private to-camera Diary Room confessional, 1-3 sentences, in the actor's talking style. It may contradict what they say publicly.`,
+      prompt: `You are ${actorPersona(context.state, context.actorId)}
+
+Situation: ${compactState(context.state)}
+${compactNotebook(context.state, context.actorId)}
+
+Confessional reason: ${context.reason}
+Relevant houseguests: ${relevant}
+Task: Give one private to-camera Diary Room confessional, 1-3 sentences, in the actor's talking style. It may contradict what they say publicly. Refer to people by name, never by id.`,
     });
     return result.text;
   }
@@ -261,10 +271,10 @@ For other knowledge comps, use clear recall questions. Do not invent events.`,
       inputSchema: compAnswerInputSchema,
       zodSchema: compAnswerSchema,
       system: SYSTEM_PROMPT,
-      prompt: `${basePrompt(context)}
+      prompt: `You are ${actorPersona(context.state, context.actorId)}
 
-Competition: ${context.compType}
-Round: ${context.round}
+Situation: ${compactState(context.state)}
+Competition: ${context.compType}, round ${context.round}
 Question: ${context.question.prompt}
 Task: Answer as the actor from memory. If unsure, guess plausibly. Return only the answer and confidence.`,
     });

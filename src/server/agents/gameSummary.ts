@@ -36,6 +36,44 @@ export function decisionStateSummary(state: GameState, actorId?: string): string
     .join("\n");
 }
 
+// One-line situational context (no roster, no notebook) for cheap flavor calls.
+export function compactState(state: GameState): string {
+  const nameOf = (id: string | null) => (id ? getHouseguest(state, id).name : "none");
+  const noms = state.nomineeIds.map((id) => getHouseguest(state, id).name).join(", ") || "none";
+  return `Week ${state.week}, ${state.phase}. ${activeHouseguests(state).length} houseguests left. HOH: ${nameOf(
+    state.hohId,
+  )}. Nominees: ${noms}. Veto holder: ${nameOf(state.vetoHolderId)}.`;
+}
+
+// Just the juicy strategic bits of a notebook (targets, alliances, top reads, grudges) — keeps
+// confessionals personal without shipping the whole relationship table on every call.
+export function compactNotebook(state: GameState, actorId: string): string {
+  const nb = getHouseguest(state, actorId).notebook;
+  const targets = nb.targetIds.map((id) => getHouseguest(state, id).name).join(", ");
+  const alliances = nb.allianceIds
+    .map((id) => state.alliances.find((alliance) => alliance.id === id)?.name)
+    .filter(Boolean)
+    .join(", ");
+  const reads = Object.values(nb.relationships)
+    .filter((relationship) => relationship.trust !== 0 || relationship.isShowmance)
+    .sort((a, b) => Math.abs(b.trust) - Math.abs(a.trust))
+    .slice(0, 4)
+    .map((r) => `${getHouseguest(state, r.targetId).name} (${r.trust > 0 ? "+" : ""}${r.trust}${r.isShowmance ? ", showmance" : ""})`)
+    .join(", ");
+  const grudges = [...nb.grudges]
+    .sort((a, b) => b.magnitude - a.magnitude)
+    .slice(0, 2)
+    .map((g) => `${getHouseguest(state, g.againstId).name}: ${g.what}`)
+    .join("; ");
+  const lines = [
+    targets ? `Your targets: ${targets}` : null,
+    alliances ? `Your alliances: ${alliances}` : null,
+    reads ? `Key reads: ${reads}` : null,
+    grudges ? `Grudges: ${grudges}` : null,
+  ].filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : "No strong reads or grudges yet.";
+}
+
 export function actorPersona(state: GameState, actorId: string): string {
   const actor = getHouseguest(state, actorId);
   return [

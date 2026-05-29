@@ -28,3 +28,9 @@ export const SOCIAL = {
   MAX_TURNS_PER_CONVERSATION: 3,
 } as const;
 
+// Flavor cost knobs. Not every eviction voter needs a to-camera confessional (real broadcasts
+// show a handful); generate them for a fraction of voters to cut Haiku call volume.
+export const FLAVOR = {
+  VOTE_CONFESSIONAL_RATE: 0.4,
+} as const;
+

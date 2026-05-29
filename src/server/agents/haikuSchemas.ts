@@ -43,15 +43,17 @@ export const conversationPlanSchema = z.object({
 });
 
 export const socialTurnSchema = z.object({
-  text: z.string().min(1).max(500),
-  done: z.boolean(),
+  text: z.string().min(1),
+  // The model frequently omits `done` or sends a non-boolean; never let that drop the whole
+  // turn to a canned fallback line — default to false (the conversation just runs to its cap).
+  done: z.boolean().catch(false),
   relationshipDeltas: z
     .array(
       z.object({
         targetId: z.string(),
         trustDelta: z.number().int().min(-25).max(25),
-        sentiment: z.string().max(80).optional(),
-        note: z.string().max(120).optional(),
+        sentiment: z.string().optional(),
+        note: z.string().optional(),
         grudgeMagnitude: z.number().int().min(1).max(100).optional(),
       }),
     )
@@ -60,14 +62,14 @@ export const socialTurnSchema = z.object({
     .array(
       z.object({
         witnessIds: z.array(z.string()).optional(),
-        what: z.string().max(180),
+        what: z.string(),
         magnitude: z.number().int().min(1).max(100),
       }),
     )
     .optional(),
   allianceProposal: z
     .object({
-      name: z.string().max(48),
+      name: z.string(),
       memberIds: z.array(z.string()).min(2).max(6),
       secret: z.boolean().optional(),
     })
@@ -76,13 +78,13 @@ export const socialTurnSchema = z.object({
   dealProposal: z
     .object({
       partyIds: z.array(z.string()).min(2).max(4),
-      terms: z.string().max(180),
+      terms: z.string(),
     })
     .nullable()
     .optional(),
   showmanceTargetId: z.string().nullable().optional(),
-  secretsShared: z.array(z.string().max(180)).optional(),
-  readsShared: z.array(z.string().max(180)).optional(),
+  secretsShared: z.array(z.string()).optional(),
+  readsShared: z.array(z.string()).optional(),
   reasoning: z.string().min(1),
 });
 
@@ -105,9 +107,10 @@ export const compQuestionSchema = z.object({
 });
 
 export const compAnswerSchema = z.object({
-  answer: z.string().min(1).max(180),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string().min(1).max(300),
+  answer: z.string().min(1),
+  // Tolerate an out-of-range/odd confidence now that answers actually parse — default to 0.5.
+  confidence: z.number().min(0).max(1).catch(0.5),
+  reasoning: z.string().min(1),
 });
 
 export type NominationToolInput = z.infer<typeof nominationSchema>;

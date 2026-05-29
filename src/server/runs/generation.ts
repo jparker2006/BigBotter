@@ -8,12 +8,14 @@ import { AnthropicToolCaller } from "../agents/anthropicTool";
 import { HaikuDecider } from "../agents/haikuDecider";
 import { loadGeneratedCast } from "../cast/loadCast";
 import { loadRootEnv } from "../env";
-import { createRunLogger, type LogEntry, type RunLogger } from "./runLogger";
+import { createRunLogger, type RunLogger } from "./runLogger";
 import { saveRun, type RunMeta, type RunMode } from "./runStore";
 
 const DEFAULT_CAST_PATH = "data/casts/m2-cast-001.json";
 
 export type SeasonContext = {
+  id: string;
+  savedAt: string;
   seed: number;
   rng: Rng;
   state0: GameState;
@@ -45,12 +47,15 @@ export function prepareSeason(seed: number, useHaiku: boolean): SeasonContext {
     decider = new RandomDecider(rng);
   }
 
-  return { seed: safeSeed, rng, state0, decider, logger, mode: useHaiku ? "haiku" : "random" };
+  const mode: RunMode = useHaiku ? "haiku" : "random";
+  const savedAt = new Date().toISOString();
+  const id = `run-${savedAt.replace(/[^0-9]/g, "").slice(0, 17)}-${safeSeed}-${useHaiku ? "ai" : "r"}`;
+  return { id, savedAt, seed: safeSeed, rng, state0, decider, logger, mode };
 }
 
-// Persists a finished season (tape + debug log) and returns its listable summary.
-export function finalizeRun(params: { tape: SeasonTape; mode: RunMode; log: LogEntry[] }): RunMeta {
-  const savedAt = new Date().toISOString();
-  const id = `run-${savedAt.replace(/[^0-9]/g, "").slice(0, 17)}-${params.tape.state0.seed}-${params.mode === "haiku" ? "ai" : "r"}`;
-  return saveRun({ id, tape: params.tape, mode: params.mode, savedAt, log: params.log });
+// Persists a run snapshot (tape + debug log) under the context's stable id. Called repeatedly
+// as checkpoints during generation (complete=false) and once at the end (complete=true), so an
+// interrupted run is never lost.
+export function persistRun(ctx: SeasonContext, tape: SeasonTape, complete: boolean): RunMeta {
+  return saveRun({ id: ctx.id, tape, mode: ctx.mode, savedAt: ctx.savedAt, log: ctx.logger.entries(), complete });
 }

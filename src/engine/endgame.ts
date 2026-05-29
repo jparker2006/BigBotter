@@ -116,7 +116,7 @@ export async function runFinalJuryVote(
   }
   const juryVotes = await Promise.all(
     state.juryIds.map(async (jurorId) => {
-    const finalistId = await withValidation(
+    const vote = await withValidation(
       () =>
         deps.decider.juryVote({
           state,
@@ -125,16 +125,16 @@ export async function runFinalJuryVote(
           reason: "jury_vote",
           finalistIds: finalists,
         }),
-      (decision) => (finalists.includes(decision) ? decision : null),
-      () => deps.rng.pick(finalists),
+      (decision) => (finalists.includes(decision.finalistId) ? decision : null),
+      () => ({ finalistId: deps.rng.pick(finalists), reasoning: "I voted with my gut." }),
     );
-      return { jurorId, finalistId };
+      return { jurorId, finalistId: vote.finalistId, reasoning: vote.reasoning };
     }),
   );
 
   for (const vote of juryVotes) {
     tally[vote.finalistId] = (tally[vote.finalistId] ?? 0) + 1;
-    events.push({ t: "jury_vote", jurorId: vote.jurorId, finalistId: vote.finalistId, reasoning: "Juror decision." });
+    events.push({ t: "jury_vote", jurorId: vote.jurorId, finalistId: vote.finalistId, reasoning: vote.reasoning });
   }
 
   const winnerId = finalists.sort((a, b) => (tally[b] ?? 0) - (tally[a] ?? 0))[0]!;

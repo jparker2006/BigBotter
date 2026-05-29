@@ -31,7 +31,9 @@ function toolInputFromMessage(message: Awaited<ReturnType<Anthropic["messages"][
 }
 
 export class AnthropicToolCaller {
-  private readonly client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  // 30s per-request timeout (vs the SDK's 10-min default) so a hung call fails fast and falls
+  // back instead of stalling a long run; maxRetries covers transient network/5xx/429/timeouts.
+  private readonly client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY"), timeout: 30_000, maxRetries: 2 });
 
   // `onCall` (optional) receives a structured log entry for every Haiku tool call — used by
   // the run logger for the M8 debug log. Omitted in scripts/tests, so behaviour is unchanged.

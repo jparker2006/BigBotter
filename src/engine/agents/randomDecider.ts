@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import type { AgentDecider, DecisionContext } from "./decider";
+import type { AgentDecider, DecisionContext, JuryVote } from "./decider";
 import type { VetoUseDecision } from "../rules/veto";
 import { getHouseguest } from "../selectors";
 
@@ -31,7 +31,7 @@ export class RandomDecider implements AgentDecider {
     return this.rng.pick(context.finalistOptions);
   }
 
-  async juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<string> {
+  async juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<JuryVote> {
     const juror = getHouseguest(context.state, context.actorId);
     const scored = context.finalistIds.map((id) => {
       const trust = juror.notebook.relationships[id]?.trust ?? 0;
@@ -40,7 +40,13 @@ export class RandomDecider implements AgentDecider {
         .reduce((sum, candidate) => sum + candidate.magnitude, 0);
       return { id, score: trust - grudge + this.rng.nextFloat(-15, 15) };
     });
-    return scored.sort((a, b) => b.score - a.score)[0]?.id ?? this.rng.pick(context.finalistIds);
+    const finalistId = scored.sort((a, b) => b.score - a.score)[0]?.id ?? this.rng.pick(context.finalistIds);
+    const winner = getHouseguest(context.state, finalistId);
+    const reasoning =
+      (juror.notebook.relationships[finalistId]?.trust ?? 0) >= 0
+        ? `${winner.name} played a game I respect and kept it straight with me.`
+        : `I'm not thrilled with ${winner.name}, but they out-played the other side.`;
+    return { finalistId, reasoning };
   }
 
   async pickHouseguestChoice(context: DecisionContext): Promise<string> {

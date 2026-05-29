@@ -20,6 +20,8 @@ export type RunMeta = {
   winnerId: string | null;
   winnerName: string | null;
   logEntries: number;
+  // false while a run is still generating (checkpointed); true once it finishes.
+  complete: boolean;
 };
 
 // Run ids are used as filenames — reject anything that could escape the runs dir.
@@ -46,7 +48,7 @@ function writeIndex(metas: RunMeta[]): void {
   writeFileSync(INDEX_PATH, JSON.stringify(metas, null, 2));
 }
 
-function summarizeTape(tape: SeasonTape): Omit<RunMeta, "id" | "savedAt" | "mode" | "logEntries"> {
+function summarizeTape(tape: SeasonTape): Omit<RunMeta, "id" | "savedAt" | "mode" | "logEntries" | "complete"> {
   let weeks = 0;
   const juryTally = new Map<string, number>();
   for (const event of tape.events) {
@@ -71,12 +73,12 @@ function summarizeTape(tape: SeasonTape): Omit<RunMeta, "id" | "savedAt" | "mode
   return { seed: tape.state0.seed, weeks, eventCount: tape.events.length, winnerId, winnerName };
 }
 
-export function saveRun(params: { id: string; tape: SeasonTape; mode: RunMode; savedAt: string; log: LogEntry[] }): RunMeta {
-  const { id, tape, mode, savedAt, log } = params;
+export function saveRun(params: { id: string; tape: SeasonTape; mode: RunMode; savedAt: string; log: LogEntry[]; complete?: boolean }): RunMeta {
+  const { id, tape, mode, savedAt, log, complete = true } = params;
   assertValidId(id);
   mkdirSync(LOGS_DIR, { recursive: true });
 
-  const meta: RunMeta = { id, savedAt, mode, logEntries: log.length, ...summarizeTape(tape) };
+  const meta: RunMeta = { id, savedAt, mode, logEntries: log.length, complete, ...summarizeTape(tape) };
   writeFileSync(join(RUNS_DIR, `${id}.json`), JSON.stringify({ meta, tape }));
   if (log.length > 0) {
     writeFileSync(join(LOGS_DIR, `${id}.jsonl`), log.map((entry) => JSON.stringify(entry)).join("\n"));

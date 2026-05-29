@@ -1,4 +1,4 @@
-import { MORALE, DOUBLE_EVICTION_AT_HOUSE_SIZE } from "./constants";
+import { MORALE, DOUBLE_EVICTION_AT_HOUSE_SIZE, FLAVOR } from "./constants";
 import type { AgentDecider } from "./agents/decider";
 import { withValidation } from "./agents/validateDecision";
 import { pickHohComp, pickVetoComp } from "./comps/compScheduler";
@@ -362,6 +362,9 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
   }
 
   const voters = evictionVoters(state);
+  // Only a fraction of voters get a to-camera confessional (cost control) — chosen up front off
+  // the shared RNG so the parallel vote loop below stays deterministic.
+  const confessVoters = new Set(voters.filter(() => deps.rng.next() < FLAVOR.VOTE_CONFESSIONAL_RATE));
   const votes = await Promise.all(
     voters.map(async (voterId) => {
     const targetId = await withValidation(
@@ -376,7 +379,9 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       (decision) => validateEvictionVote(state, decision),
       () => deps.rng.pick(state.nomineeIds),
     );
-      const confessional = await confessionalText(state, deps.decider, voterId, "eviction_vote", [...state.nomineeIds]);
+      const confessional = confessVoters.has(voterId)
+        ? await confessionalText(state, deps.decider, voterId, "eviction_vote", [...state.nomineeIds])
+        : undefined;
       return { voterId, targetId, confessional };
     }),
   );

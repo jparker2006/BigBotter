@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RandomDecider } from "../agents/randomDecider";
-import type { AgentDecider, DecisionContext } from "../agents/decider";
+import type { AgentDecider, DecisionContext, JuryVote } from "../agents/decider";
 import type { VetoUseDecision } from "../rules/veto";
 import { createInitialState } from "../houseguestFactory";
 import { runSeason } from "../season";
@@ -174,8 +174,8 @@ class IllegalDecider implements AgentDecider {
     return "not-real";
   }
 
-  async juryVote(): Promise<string> {
-    return "not-real";
+  async juryVote(): Promise<JuryVote> {
+    return { finalistId: "not-real", reasoning: "illegal" };
   }
 
   async pickHouseguestChoice(context: DecisionContext): Promise<string> {
