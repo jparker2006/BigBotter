@@ -38,6 +38,9 @@ yarn-error.log*
 /public/generated/portraits/**
 !/public/generated/portraits/.gitkeep
 
+# saved season runs + debug logs (local persistence, M8)
+/runs/
+
 # vercel
 .vercel
 

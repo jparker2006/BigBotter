@@ -3,10 +3,13 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState, useTransition } from "react";
 import type { GameEvent, RoomId, SeasonTape } from "../engine/types";
-import { generateReplayTape, narrateJulieLine } from "./actions";
+import type { RunMeta } from "../server/runs/runStore";
+import { deleteSavedRun, generateReplayTape, listSavedRuns, loadSavedRun, narrateJulieLine } from "./actions";
 import BroadcastStage from "./BroadcastStage";
+import DebugLogPanel from "./DebugLogPanel";
 import { buildReplayFrame, describeEvent, nameFor, type WallHouseguest } from "./replayModel";
 import { useReplayStore } from "./replayStore";
+import SavedRunsPanel from "./SavedRunsPanel";
 
 const House3D = dynamic(() => import("./House3D"), {
   ssr: false,
@@ -106,6 +109,8 @@ export default function ReplayPlayer() {
   const [useHaiku, setUseHaiku] = useState(false);
   const [tape, setTape] = useState<SeasonTape | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<RunMeta[]>([]);
+  const [loadedRunId, setLoadedRunId] = useState<string | null>(null);
   const [winnerPredictionId, setWinnerPredictionId] = useState("");
   const [evictionPredictionId, setEvictionPredictionId] = useState("");
   const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
@@ -128,20 +133,56 @@ export default function ReplayPlayer() {
     return () => window.clearInterval(timer);
   }, [advance, isPlaying, tape]);
 
+  useEffect(() => {
+    listSavedRuns().then(setRuns).catch(() => setRuns([]));
+  }, []);
+
+  function applyLoadedTape(nextTape: SeasonTape, runId: string | null) {
+    setTape(nextTape);
+    setLoadedRunId(runId);
+    setCursor(0);
+    setWinnerPredictionId("");
+    setEvictionPredictionId("");
+    setVoiceStatus(null);
+  }
+
   function generate() {
     setError(null);
     pause();
     startTransition(async () => {
       try {
         const parsedSeed = Number(seed);
-        const nextTape = await generateReplayTape(Number.isInteger(parsedSeed) ? parsedSeed : Date.now(), useHaiku);
-        setTape(nextTape);
-        setCursor(0);
-        setWinnerPredictionId("");
-        setEvictionPredictionId("");
-        setVoiceStatus(null);
+        const { tape: nextTape, meta } = await generateReplayTape(Number.isInteger(parsedSeed) ? parsedSeed : Date.now(), useHaiku);
+        applyLoadedTape(nextTape, meta.id);
+        setRuns(await listSavedRuns());
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Failed to generate tape.");
+      }
+    });
+  }
+
+  function handleLoadRun(id: string) {
+    setError(null);
+    pause();
+    startTransition(async () => {
+      try {
+        const { tape: nextTape } = await loadSavedRun(id);
+        applyLoadedTape(nextTape, id);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Failed to load run.");
+      }
+    });
+  }
+
+  function handleDeleteRun(id: string) {
+    startTransition(async () => {
+      try {
+        setRuns(await deleteSavedRun(id));
+        if (loadedRunId === id) {
+          setLoadedRunId(null);
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Failed to delete run.");
       }
     });
   }
@@ -334,6 +375,13 @@ export default function ReplayPlayer() {
                 ))
               )}
             </div>
+            <SavedRunsPanel
+              runs={runs}
+              loadedRunId={loadedRunId}
+              disabled={isPending}
+              onLoad={handleLoadRun}
+              onDelete={handleDeleteRun}
+            />
           </aside>
         </section>
 
@@ -384,6 +432,8 @@ export default function ReplayPlayer() {
                 </div>
               </div>
             </div>
+
+            {godMode ? <DebugLogPanel key={loadedRunId ?? "none"} runId={loadedRunId} /> : null}
           </section>
         ) : null}
       </div>
