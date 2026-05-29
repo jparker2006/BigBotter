@@ -146,9 +146,19 @@ export type GameEvent =
   | { t: "movement"; hgId: string; from: RoomId; to: RoomId }
   | {
       t: "conversation";
+      week?: number;
+      phase?: Phase;
       roomId: RoomId;
       participantIds: string[];
       turns: { speakerId: string; text: string }[];
+      payload?: {
+        intent?: string;
+        allianceIds?: string[];
+        dealIds?: string[];
+        showmanceIds?: string[];
+        witnessIds?: string[];
+        blockedByIds?: string[];
+      };
     }
   | { t: "confessional"; speakerId: string; text: string }
   | { t: "ceremony"; week: number; kind: CeremonyKind; payload: Record<string, unknown> }
@@ -160,4 +170,3 @@ export interface SeasonTape {
   state0: GameState;
   events: GameEvent[];
 }
-

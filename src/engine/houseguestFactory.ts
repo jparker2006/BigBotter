@@ -1,6 +1,7 @@
 import { CAST_SIZE } from "./constants";
-import type { GameState, Houseguest, Notebook, RoomId, Stats } from "./types";
+import type { GameState, Houseguest, RoomId, Stats } from "./types";
 import type { Rng } from "./rng";
+import { emptyNotebook, ensureAllNotebooks } from "./social/notebook";
 
 const ROOMS: RoomId[] = ["bedrooms", "kitchen", "living_room", "backyard", "storage"];
 
@@ -25,19 +26,6 @@ const OCCUPATIONS = [
   "chef",
   "event planner",
 ];
-
-function emptyNotebook(): Notebook {
-  return {
-    relationships: {},
-    allianceIds: [],
-    targetIds: [],
-    deals: [],
-    secretsKnown: [],
-    reads: [],
-    grudges: [],
-    memoryLog: [],
-  };
-}
 
 function stat(rng: Rng): number {
   return rng.int(28, 92);
@@ -109,7 +97,7 @@ export function createInitialState(seed: number, rng: Rng): GameState {
 }
 
 export function createInitialStateFromCast(seed: number, houseguests: Houseguest[]): GameState {
-  return {
+  const state: GameState = {
     seasonId: `season-${seed}`,
     seed,
     week: 1,
@@ -134,4 +122,6 @@ export function createInitialStateFromCast(seed: number, houseguests: Houseguest
     doubleEvictionRemaining: 0,
     usedCompTypes: [],
   };
+  ensureAllNotebooks(state);
+  return state;
 }

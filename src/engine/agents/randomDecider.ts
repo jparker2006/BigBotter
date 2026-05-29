@@ -1,6 +1,7 @@
 import type { Rng } from "../rng";
 import type { AgentDecider, DecisionContext } from "./decider";
 import type { VetoUseDecision } from "../rules/veto";
+import { getHouseguest } from "../selectors";
 
 export class RandomDecider implements AgentDecider {
   constructor(private readonly rng: Rng) {}
@@ -31,11 +32,18 @@ export class RandomDecider implements AgentDecider {
   }
 
   async juryVote(context: DecisionContext & { finalistIds: string[] }): Promise<string> {
-    return this.rng.pick(context.finalistIds);
+    const juror = getHouseguest(context.state, context.actorId);
+    const scored = context.finalistIds.map((id) => {
+      const trust = juror.notebook.relationships[id]?.trust ?? 0;
+      const grudge = juror.notebook.grudges
+        .filter((candidate) => candidate.againstId === id)
+        .reduce((sum, candidate) => sum + candidate.magnitude, 0);
+      return { id, score: trust - grudge + this.rng.nextFloat(-15, 15) };
+    });
+    return scored.sort((a, b) => b.score - a.score)[0]?.id ?? this.rng.pick(context.finalistIds);
   }
 
   async pickHouseguestChoice(context: DecisionContext): Promise<string> {
     return this.rng.pick(context.legalIds);
   }
 }
-

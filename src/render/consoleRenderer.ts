@@ -48,6 +48,30 @@ export function renderConsoleTape(tape: SeasonTape): string[] {
       continue;
     }
 
+    if (event.t === "movement") {
+      lines.push(`${name(tape, event.hgId)} moves from ${event.from} to ${event.to}.`);
+      continue;
+    }
+
+    if (event.t === "conversation") {
+      const people = event.participantIds.map((id) => name(tape, id)).join(", ");
+      const intent = event.payload?.intent ? ` (${event.payload.intent})` : "";
+      lines.push(`Conversation in ${event.roomId}${intent}: ${people}`);
+      for (const turn of event.turns) {
+        lines.push(`  ${name(tape, turn.speakerId)}: ${turn.text}`);
+      }
+      if (event.payload?.allianceIds?.length) {
+        lines.push(`  Alliances formed: ${event.payload.allianceIds.join(", ")}`);
+      }
+      if (event.payload?.dealIds?.length) {
+        lines.push(`  Deals made: ${event.payload.dealIds.join(", ")}`);
+      }
+      if (event.payload?.showmanceIds?.length) {
+        lines.push(`  Showmance signal: ${event.payload.showmanceIds.join(", ")}`);
+      }
+      continue;
+    }
+
     if (event.t === "ceremony") {
       if (event.kind === "nomination") {
         const nomineeIds = event.payload.nomineeIds as string[];

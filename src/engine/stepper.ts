@@ -14,6 +14,8 @@ import { applyHaveNots, clearHaveNot, expireHaveNots, selectHaveNots } from "./r
 import { applyNominations, legalNominees, validateNominations } from "./rules/nominations";
 import { applyVetoUse, legalReplacementNominees, validateVetoUse } from "./rules/veto";
 import { evictionResultFromTally, tallyVotes, validateEvictionVote } from "./rules/votes";
+import { recordNominationConsequences, recordVoteConsequences } from "./social/notebook";
+import { runSocialScheme } from "./social/socialSystem";
 
 export type StepDeps = { rng: Rng; decider: AgentDecider };
 export type StepResult = { state: GameState; events: GameEvent[]; done: boolean };
@@ -117,6 +119,7 @@ async function runNominations(state: GameState, deps: StepDeps): Promise<StepRes
     () => deps.rng.shuffle(legalIds).slice(0, 2),
   );
   applyNominations(state, nomineeIds);
+  recordNominationConsequences(state, state.hohId!, nomineeIds);
   state.phase = "scheme_2";
   return {
     state,
@@ -187,6 +190,9 @@ async function runVetoCeremony(state: GameState, deps: StepDeps): Promise<StepRe
   }
 
   applyVetoUse(state, decision, replacementNomId);
+  if (replacementNomId) {
+    recordNominationConsequences(state, state.hohId!, [replacementNomId]);
+  }
   state.phase = "scheme_4";
 
   return {
@@ -288,6 +294,7 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       (decision) => validateEvictionVote(state, decision),
       () => deps.rng.pick(state.nomineeIds),
     );
+    recordVoteConsequences(state, voterId, evictedId, true);
     events.push({ t: "vote", week: state.week, voterId, targetId: evictedId, confessional: "Final 4 sole vote." });
     events.push({
       t: "ceremony",
@@ -320,6 +327,7 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
     }),
   );
   for (const vote of votes) {
+    recordVoteConsequences(state, vote.voterId, vote.targetId, false);
     events.push({ t: "vote", week: state.week, voterId: vote.voterId, targetId: vote.targetId });
   }
 
@@ -340,6 +348,7 @@ async function runEviction(state: GameState, deps: StepDeps): Promise<StepResult
       (decision) => (result.leaders.includes(decision) ? decision : null),
       () => deps.rng.pick(result.leaders),
     );
+    recordVoteConsequences(state, state.hohId!, evictedId, true);
     events.push({ t: "vote", week: state.week, voterId: state.hohId!, targetId: evictedId, isTiebreaker: true });
   } else {
     evictedId = result.leaders[0]!;
@@ -390,12 +399,17 @@ export async function step(inputState: GameState, deps: StepDeps): Promise<StepR
     return runEviction(state, deps);
   }
 
-  const nextPhase = nextSchemePhase(state.phase);
-  const schemeNumber = state.phase.replace("scheme_", "");
+  const schemePhase = state.phase;
+  const { events } = await runSocialScheme(state, deps);
+  const nextPhase = nextSchemePhase(schemePhase);
+  const schemeNumber = schemePhase.replace("scheme_", "");
   state.phase = nextPhase;
   return {
     state,
-    events: [{ t: "host", week: state.week, text: `Scheming window ${schemeNumber}: placeholder agents talk in circles.` }],
+    events: [
+      { t: "host", week: state.week, text: `Scheming window ${schemeNumber}: houseguests split into rooms and work the game.` },
+      ...events,
+    ],
     done: false,
   };
 }

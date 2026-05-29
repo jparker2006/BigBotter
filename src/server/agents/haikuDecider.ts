@@ -1,4 +1,11 @@
-import type { AgentDecider, DecisionContext } from "../../engine/agents/decider";
+import type {
+  AgentDecider,
+  ConversationPlan,
+  DecisionContext,
+  SocialPlanContext,
+  SocialTurn,
+  SocialTurnContext,
+} from "../../engine/agents/decider";
 import { withValidation } from "../../engine/agents/validateDecision";
 import type { VetoUseDecision } from "../../engine/rules/veto";
 import { actorPersona, decisionStateSummary, legalIdList } from "./gameSummary";
@@ -8,8 +15,12 @@ import {
   idChoiceSchema,
   juryVoteInputSchema,
   juryVoteSchema,
+  conversationPlanInputSchema,
+  conversationPlanSchema,
   nominationInputSchema,
   nominationSchema,
+  socialTurnInputSchema,
+  socialTurnSchema,
   vetoUseInputSchema,
   vetoUseSchema,
 } from "./haikuSchemas";
@@ -22,7 +33,7 @@ Do not invent secret knowledge, alliances, conversations, or events that are not
 function basePrompt(context: DecisionContext): string {
   return [
     `Actor persona:\n${actorPersona(context.state, context.actorId)}`,
-    `Game state:\n${decisionStateSummary(context.state)}`,
+    `Game state:\n${decisionStateSummary(context.state, context.actorId)}`,
     `Legal ids:\n${legalIdList(context.state, context.legalIds)}`,
   ].join("\n\n");
 }
@@ -124,5 +135,53 @@ export class HaikuDecider implements AgentDecider {
     );
     return result.selectedId;
   }
-}
 
+  async planConversation(context: SocialPlanContext): Promise<ConversationPlan> {
+    const result = await this.caller.callTool({
+      toolName: "plan_conversation",
+      description: "Choose who to approach for a Big Brother-style scheming conversation.",
+      inputSchema: conversationPlanInputSchema,
+      zodSchema: conversationPlanSchema,
+      system: SYSTEM_PROMPT,
+      prompt: `${basePrompt(context)}\n\nYou are currently in ${context.roomId}. Phase: ${context.phase}.
+Task: choose 1-3 legal houseguests to approach for a strategic conversation. You may lie, test trust, campaign, make a deal, or form an alliance. Use only your private notebook and public game state.`,
+    });
+    return {
+      participantIds: result.participantIds,
+      preferredRoomId: result.preferredRoomId,
+      intent: result.intent,
+    };
+  }
+
+  async speakTurn(context: SocialTurnContext): Promise<SocialTurn> {
+    const prior = context.priorTurns.map((turn) => `${turn.speakerId}: ${turn.text}`).join("\n") || "none";
+    const result = await this.caller.callTool({
+      toolName: "speak_social_turn",
+      description: "Speak one scheming conversation turn and identify private notebook updates caused by it.",
+      inputSchema: socialTurnInputSchema,
+      zodSchema: socialTurnSchema,
+      system: `${SYSTEM_PROMPT}
+For dialogue, be sharp, funny, strategic, and rated-R when natural. Do not use slurs. You may lie in spoken text.
+Notebook updates must only apply to people in the room or listed witnesses. Do not reveal information the actor does not know.`,
+      prompt: `${basePrompt(context)}\n\nRoom: ${context.roomId}
+Participants: ${context.participantIds.join(", ")}
+Possible overhearers/witnesses: ${context.witnessIds.join(", ") || "none"}
+Conversation intent: ${context.intent}
+Prior turns:
+${prior}
+
+Task: Speak exactly one line as the actor. Also return relationship deltas, memories, secrets/reads shared, and any alliance/deal/showmance proposal that this line actually creates. Keep updates limited to what the actor says or what listeners could witness.`,
+    });
+    return {
+      text: result.text,
+      done: result.done,
+      relationshipDeltas: result.relationshipDeltas,
+      memories: result.memories,
+      allianceProposal: result.allianceProposal,
+      dealProposal: result.dealProposal,
+      showmanceTargetId: result.showmanceTargetId,
+      secretsShared: result.secretsShared,
+      readsShared: result.readsShared,
+    };
+  }
+}

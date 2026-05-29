@@ -232,5 +232,18 @@ describe("Milestone 1 deterministic season", () => {
     assertSeasonInvariants(tape);
     assertEligibilityAndCeremonies(tape);
   });
-});
 
+  it("emits social movement and conversation events with private notebook effects", async () => {
+    const { state, tape } = await runWithDecider(1234, (rng) => new RandomDecider(rng));
+    expect(eventsOf(tape, "movement").length).toBeGreaterThan(0);
+    expect(eventsOf(tape, "conversation").length).toBeGreaterThan(0);
+    expect(eventsOf(tape, "conversation").some((event) => event.participantIds.length > 2)).toBe(true);
+
+    const notebooksWithMemories = state.houseguests.filter((houseguest) => houseguest.notebook.memoryLog.length > 0);
+    const relationshipChanges = state.houseguests.flatMap((houseguest) =>
+      Object.values(houseguest.notebook.relationships).filter((relationship) => relationship.trust !== 0),
+    );
+    expect(notebooksWithMemories.length).toBeGreaterThan(0);
+    expect(relationshipChanges.length).toBeGreaterThan(0);
+  });
+});
