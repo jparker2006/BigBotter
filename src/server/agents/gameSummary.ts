@@ -1,13 +1,13 @@
 import { activeHouseguests, getHouseguest } from "../../engine/selectors";
 import type { Alliance, GameState } from "../../engine/types";
 
+// Compact roster line for in-game prompts: archetype + morale + role flags are what matter
+// strategically. Cosmetic bio fields (age/occupation/hometown) are omitted to cut tokens — the
+// actor's own full bio still ships via actorPersona.
 function houseguestLine(state: GameState, id: string): string {
   const houseguest = getHouseguest(state, id);
   return [
     `${houseguest.id}: ${houseguest.name}`,
-    `${houseguest.age}`,
-    houseguest.occupation,
-    houseguest.hometown,
     `archetype=${houseguest.archetype}`,
     `morale=${houseguest.morale}`,
     houseguest.status !== "active" ? `status=${houseguest.status}` : null,
@@ -57,8 +57,10 @@ export function privateNotebookSummary(state: GameState, actorId: string): strin
   const actor = getHouseguest(state, actorId);
   const relationships = Object.values(actor.notebook.relationships)
     .filter((relationship) => state.houseguests.some((houseguest) => houseguest.id === relationship.targetId))
+    // Drop zero-signal entries (default trust 0, unproven, no notes) — they're pure prompt filler.
+    .filter((relationship) => relationship.trust !== 0 || relationship.isShowmance || Boolean(relationship.notes))
     .sort((a, b) => Math.abs(b.trust) - Math.abs(a.trust))
-    .slice(0, 10)
+    .slice(0, 8)
     .map((relationship) => {
       const target = getHouseguest(state, relationship.targetId);
       return `${target.id}: trust=${relationship.trust}, sentiment=${relationship.sentiment}, showmance=${relationship.isShowmance}, notes=${

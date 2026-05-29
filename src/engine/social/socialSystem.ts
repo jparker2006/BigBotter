@@ -1,4 +1,5 @@
 import type { AgentDecider, ConversationPlan, SocialIntent, SocialTurn } from "../agents/decider";
+import { SOCIAL } from "../constants";
 import { activeHouseguests, getHouseguest } from "../selectors";
 import type { GameEvent, GameState, Phase, RoomId } from "../types";
 import type { Rng } from "../rng";
@@ -244,7 +245,10 @@ async function getTurn(
 
 function selectConversationActors(state: GameState, rng: Rng, phase: Phase): string[] {
   const active = activeHouseguests(state);
-  const desired = Math.max(2, Math.min(6, Math.ceil(active.length / 3)));
+  const desired = Math.max(
+    1,
+    Math.min(SOCIAL.MAX_CONVERSATIONS_PER_WINDOW, Math.ceil(active.length / SOCIAL.CONVERSATION_DIVISOR)),
+  );
   const priority = active
     .map((houseguest) => {
       let score = rng.next();
@@ -259,6 +263,81 @@ function selectConversationActors(state: GameState, rng: Rng, phase: Phase): str
     })
     .sort((a, b) => b.score - a.score);
   return priority.slice(0, desired).map((candidate) => candidate.id);
+}
+
+type ConversationSpec = {
+  actorId: string;
+  participantIds: string[];
+  roomId: RoomId;
+  witnessIds: string[];
+  intent: SocialIntent;
+  maxTurns: number;
+  blockedByIds: string[];
+};
+
+// Runs one conversation's multi-turn dialogue and applies its notebook/alliance effects to
+// state. Conversations are built with disjoint participant sets, so several can run in parallel
+// without their state mutations colliding.
+async function runConversation(
+  state: GameState,
+  deps: { rng: Rng; decider: AgentDecider },
+  phase: Phase,
+  spec: ConversationSpec,
+): Promise<GameEvent> {
+  const { participantIds, roomId, witnessIds, intent, maxTurns } = spec;
+  const turns: { speakerId: string; text: string }[] = [];
+  const socialChanges = { allianceIds: [] as string[], dealIds: [] as string[], showmanceIds: [] as string[] };
+  let conversationHasAlliance = false;
+  let conversationHasDeal = false;
+  let conversationHasShowmance = false;
+
+  for (let turnIndex = 0; turnIndex < maxTurns; turnIndex += 1) {
+    const speakerId = participantIds[turnIndex % participantIds.length]!;
+    const turn = await getTurn(state, deps.rng, deps.decider, speakerId, phase, roomId, participantIds, witnessIds, intent, turnIndex, turns);
+    if (conversationHasAlliance) {
+      turn.allianceProposal = null;
+    }
+    if (conversationHasDeal) {
+      turn.dealProposal = null;
+    }
+    if (conversationHasShowmance) {
+      turn.showmanceTargetId = null;
+    }
+    turns.push({ speakerId, text: turn.text });
+    const applied = applySocialTurn(state, speakerId, participantIds, witnessIds, turn);
+    socialChanges.allianceIds.push(...applied.allianceIds);
+    socialChanges.dealIds.push(...applied.dealIds);
+    socialChanges.showmanceIds.push(...applied.showmanceIds);
+    conversationHasAlliance ||= applied.allianceIds.length > 0;
+    conversationHasDeal ||= applied.dealIds.length > 0;
+    conversationHasShowmance ||= applied.showmanceIds.length > 0;
+
+    for (const listenerId of participantIds.filter((id) => id !== speakerId)) {
+      const charismaDelta = Math.max(-4, Math.min(7, Math.round((getHouseguest(state, speakerId).stats.charisma - 45) / 16)));
+      adjustRelationship(state, listenerId, speakerId, charismaDelta, charismaDelta >= 0 ? "heard out" : "not buying it", intent);
+    }
+
+    if (turn.done && turnIndex >= 1) {
+      break;
+    }
+  }
+
+  return {
+    t: "conversation",
+    week: state.week,
+    phase,
+    roomId,
+    participantIds: [...participantIds],
+    turns,
+    payload: {
+      intent,
+      allianceIds: [...new Set(socialChanges.allianceIds)],
+      dealIds: [...new Set(socialChanges.dealIds)],
+      showmanceIds: [...new Set(socialChanges.showmanceIds)],
+      witnessIds,
+      blockedByIds: spec.blockedByIds,
+    },
+  };
 }
 
 export async function runSocialScheme(
@@ -276,94 +355,52 @@ export async function runSocialScheme(
   const actors = selectConversationActors(state, deps.rng, phase);
   const plans = await Promise.all(actors.map((actorId) => getPlan(state, deps.rng, deps.decider, actorId, phase)));
 
+  // Sequential setup (no dialogue calls): give each conversation a disjoint participant set,
+  // pick rooms, move people, and pre-roll turn counts off the shared RNG so the parallel phase
+  // below never touches it (keeps the deterministic fallback path reproducible).
+  const specs: ConversationSpec[] = [];
+  const assigned = new Set<string>();
   for (const [index, plan] of plans.entries()) {
     const actorId = actors[index]!;
-    if (!plan) {
+    // Skip if this actor was already pulled into an earlier conversation — keeps every
+    // conversation's participant set fully disjoint so the parallel dialogue can't collide.
+    if (!plan || assigned.has(actorId)) {
       continue;
     }
-    const { roomId, blockedByIds } = chooseRoom(state, deps.rng, actorId, plan);
-    for (const participantId of plan.participantIds) {
+    const participantIds = [actorId, ...plan.participantIds.filter((id) => id !== actorId && !assigned.has(id))];
+    if (participantIds.length < 2) {
+      continue;
+    }
+    participantIds.forEach((id) => assigned.add(id));
+    const { roomId, blockedByIds } = chooseRoom(state, deps.rng, actorId, { ...plan, participantIds });
+    for (const participantId of participantIds) {
       const movement = moveToRoom(state, participantId, roomId);
       if (movement) {
         events.push(movement);
       }
     }
-
-    const witnessIds = occupants(state, roomId).filter((id) => !plan.participantIds.includes(id));
+    const witnessIds = occupants(state, roomId).filter((id) => !participantIds.includes(id));
     if (blockedByIds.length > 0) {
       rememberMany(
         state,
-        [actorId, ...plan.participantIds.filter((id) => id !== actorId)],
+        participantIds,
         `${getHouseguest(state, actorId).name} pulled a conversation away from ${blockedByIds.join(", ")}.`,
         32,
       );
     }
+    const maxTurns = 2 + deps.rng.int(0, SOCIAL.MAX_TURNS_PER_CONVERSATION - 2);
+    specs.push({ actorId, participantIds, roomId, witnessIds, intent: plan.intent, maxTurns, blockedByIds });
+  }
 
-    const turns: { speakerId: string; text: string }[] = [];
-    const socialChanges = { allianceIds: [] as string[], dealIds: [] as string[], showmanceIds: [] as string[] };
-    let conversationHasAlliance = false;
-    let conversationHasDeal = false;
-    let conversationHasShowmance = false;
-    const maxTurns = 2 + deps.rng.int(0, Math.min(3, plan.participantIds.length));
-    for (let turnIndex = 0; turnIndex < maxTurns; turnIndex += 1) {
-      const speakerId = plan.participantIds[turnIndex % plan.participantIds.length]!;
-      const turn = await getTurn(
-        state,
-        deps.rng,
-        deps.decider,
-        speakerId,
-        phase,
-        roomId,
-        plan.participantIds,
-        witnessIds,
-        plan.intent,
-        turnIndex,
-        turns,
-      );
-      if (conversationHasAlliance) {
-        turn.allianceProposal = null;
-      }
-      if (conversationHasDeal) {
-        turn.dealProposal = null;
-      }
-      if (conversationHasShowmance) {
-        turn.showmanceTargetId = null;
-      }
-      turns.push({ speakerId, text: turn.text });
-      const applied = applySocialTurn(state, speakerId, plan.participantIds, witnessIds, turn);
-      socialChanges.allianceIds.push(...applied.allianceIds);
-      socialChanges.dealIds.push(...applied.dealIds);
-      socialChanges.showmanceIds.push(...applied.showmanceIds);
-      conversationHasAlliance ||= applied.allianceIds.length > 0;
-      conversationHasDeal ||= applied.dealIds.length > 0;
-      conversationHasShowmance ||= applied.showmanceIds.length > 0;
-
-      for (const listenerId of plan.participantIds.filter((id) => id !== speakerId)) {
-        const charismaDelta = Math.max(-4, Math.min(7, Math.round((getHouseguest(state, speakerId).stats.charisma - 45) / 16)));
-        adjustRelationship(state, listenerId, speakerId, charismaDelta, charismaDelta >= 0 ? "heard out" : "not buying it", plan.intent);
-      }
-
-      if (turn.done && turnIndex >= 1) {
-        break;
-      }
+  // Dialogue: run conversations in parallel when the decider does real async work (Haiku), the
+  // big latency win. The deterministic fallback decider stays sequential for reproducibility.
+  if (typeof deps.decider.speakTurn === "function") {
+    const conversationEvents = await Promise.all(specs.map((spec) => runConversation(state, deps, phase, spec)));
+    events.push(...conversationEvents);
+  } else {
+    for (const spec of specs) {
+      events.push(await runConversation(state, deps, phase, spec));
     }
-
-    events.push({
-      t: "conversation",
-      week: state.week,
-      phase,
-      roomId,
-      participantIds: [...plan.participantIds],
-      turns,
-      payload: {
-        intent: plan.intent,
-        allianceIds: [...new Set(socialChanges.allianceIds)],
-        dealIds: [...new Set(socialChanges.dealIds)],
-        showmanceIds: [...new Set(socialChanges.showmanceIds)],
-        witnessIds,
-        blockedByIds,
-      },
-    });
   }
 
   return { state, events };

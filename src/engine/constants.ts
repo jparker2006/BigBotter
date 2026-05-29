@@ -20,3 +20,11 @@ export const MORALE = {
   HAVE_NOT: -15,
 } as const;
 
+// Social scheming volume caps — keep AI seasons affordable/fast (the dialogue calls dominate
+// cost + latency). Conversations per scheme window scale with house size up to the cap.
+export const SOCIAL = {
+  MAX_CONVERSATIONS_PER_WINDOW: 3,
+  CONVERSATION_DIVISOR: 5, // conversations ≈ ceil(activeCount / divisor), capped above
+  MAX_TURNS_PER_CONVERSATION: 3,
+} as const;
+
